@@ -10,11 +10,11 @@ import { ProtectedRoute } from "./components/ProtectedRoute";
 export const router = createBrowserRouter([
   {
     path: "/",
-    Component: SignUp,
+    Component: SignIn,
   },
   {
-    path: "/signin",
-    Component: SignIn,
+    path: "/signup",
+    Component: SignUp,
   },
   {
     path: "/home",
