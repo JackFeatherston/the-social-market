@@ -72,7 +72,7 @@ export function Home() {
         supabase
           .from("profiles")
           .select("first_name, username, balance")
-          .eq("id", user!.id)
+          .eq("id", user?.id ?? "")
           .single(),
         supabase
           .from("bets_summary")
@@ -86,8 +86,8 @@ export function Home() {
           .limit(10),
       ]);
       setProfile(profileRes.data ?? null);
-      setActiveBets((betsRes.data as ActiveBet[]) ?? []);
-      setActivity((activityRes.data as ActivityItem[]) ?? []);
+      setActiveBets((betsRes.data ?? []) as ActiveBet[]);
+      setActivity((activityRes.data ?? []) as ActivityItem[]);
       setLoading(false);
     }
     fetchData();
