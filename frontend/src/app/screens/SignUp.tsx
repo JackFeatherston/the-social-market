@@ -1,6 +1,43 @@
-import { Link } from "react-router";
+import { useState } from "react";
+import { Link, useNavigate } from "react-router";
+import { supabase } from "../../lib/supabase";
 
 export function SignUp() {
+  const navigate = useNavigate();
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          display_name: `${firstName} ${lastName}`.trim(),
+          first_name: firstName,
+          last_name: lastName,
+        },
+      },
+    });
+
+    setLoading(false);
+
+    if (error) {
+      setError(error.message);
+      return;
+    }
+
+    navigate("/home");
+  }
+
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center px-6">
       <div className="w-full max-w-sm space-y-8">
@@ -11,7 +48,7 @@ export function SignUp() {
           <h1 className="text-primary">The Social Market</h1>
         </div>
 
-        <div className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <label htmlFor="firstName" className="text-foreground/90">
               First Name
@@ -19,6 +56,9 @@ export function SignUp() {
             <input
               type="text"
               id="firstName"
+              required
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
               className="w-full px-4 py-3 rounded-2xl bg-input-background border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
               placeholder="Enter your first name"
             />
@@ -31,20 +71,26 @@ export function SignUp() {
             <input
               type="text"
               id="lastName"
+              required
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
               className="w-full px-4 py-3 rounded-2xl bg-input-background border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
               placeholder="Enter your last name"
             />
           </div>
 
           <div className="space-y-2">
-            <label htmlFor="username" className="text-foreground/90">
-              Username
+            <label htmlFor="email" className="text-foreground/90">
+              Email
             </label>
             <input
-              type="text"
-              id="username"
+              type="email"
+              id="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               className="w-full px-4 py-3 rounded-2xl bg-input-background border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-              placeholder="Choose a username"
+              placeholder="Enter your email"
             />
           </div>
 
@@ -55,17 +101,27 @@ export function SignUp() {
             <input
               type="password"
               id="password"
+              required
+              minLength={6}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
               className="w-full px-4 py-3 rounded-2xl bg-input-background border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
               placeholder="Create a password"
             />
           </div>
 
-          <Link to="/home">
-            <button className="w-full mt-6 px-6 py-4 rounded-2xl bg-primary text-primary-foreground hover:opacity-90 transition-opacity">
-              Create Account
-            </button>
-          </Link>
-        </div>
+          {error && (
+            <p className="text-sm text-destructive text-center">{error}</p>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full mt-6 px-6 py-4 rounded-2xl bg-primary text-primary-foreground hover:opacity-90 transition-opacity disabled:opacity-50"
+          >
+            {loading ? "Creating account..." : "Create Account"}
+          </button>
+        </form>
 
         <p className="text-center text-muted-foreground">
           Already have an account?{" "}
