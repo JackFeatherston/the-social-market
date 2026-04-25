@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
+import { motion, AnimatePresence } from "motion/react";
 import { BottomNav } from "../components/BottomNav";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../../lib/supabase";
@@ -60,10 +61,12 @@ function formatActivity(item: ActivityItem): {
 
 export function Home() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [activeBets, setActiveBets] = useState<ActiveBet[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showBetMenu, setShowBetMenu] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -87,7 +90,7 @@ export function Home() {
       ]);
       setProfile(profileRes.data ?? null);
       setActiveBets((betsRes.data ?? []) as ActiveBet[]);
-      setActivity((activityRes.data ?? []) as ActivityItem[]);
+      setActivity((activityRes.data ?? []) as unknown as ActivityItem[]);
       setLoading(false);
     }
     fetchData();
@@ -194,14 +197,65 @@ export function Home() {
         </div>
       </div>
 
-      <Link
-        to="/create-bet"
-        className="absolute bottom-24 left-1/2 -translate-x-1/2 z-10"
+      <button
+        onClick={() => setShowBetMenu(true)}
+        className="absolute bottom-24 left-1/2 -translate-x-1/2 z-10 w-16 h-16 rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/50 flex items-center justify-center hover:scale-110 transition-transform"
       >
-        <button className="w-16 h-16 rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/50 flex items-center justify-center hover:scale-110 transition-transform">
-          <span className="text-3xl">+</span>
-        </button>
-      </Link>
+        <span className="text-3xl leading-none">+</span>
+      </button>
+
+      <AnimatePresence>
+        {showBetMenu && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+          className="absolute inset-0 bg-black/60 z-20 flex items-end"
+          onClick={() => setShowBetMenu(false)}
+        >
+          <motion.div
+            initial={{ y: "100%" }}
+            animate={{ y: 0 }}
+            exit={{ y: "100%" }}
+            transition={{ type: "spring", damping: 30, stiffness: 300 }}
+            className="w-full bg-card rounded-t-3xl p-5 space-y-3 border-t border-x border-border pb-10"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-10 h-1 bg-border rounded-full mx-auto mb-4" />
+            <button
+              onClick={() => { setShowBetMenu(false); navigate("/create-bet"); }}
+              className="w-full flex items-center gap-4 p-4 rounded-2xl bg-background border border-border hover:border-primary/50 transition-colors text-left"
+            >
+              <div className="w-12 h-12 rounded-xl bg-primary/20 flex items-center justify-center flex-shrink-0">
+                <svg className="w-6 h-6 text-primary" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-foreground font-semibold">Create a New Bet</p>
+                <p className="text-muted-foreground text-sm">Start a prediction market with your friends</p>
+              </div>
+            </button>
+
+            <button
+              onClick={() => { setShowBetMenu(false); navigate("/place-bet"); }}
+              className="w-full flex items-center gap-4 p-4 rounded-2xl bg-background border border-border hover:border-primary/50 transition-colors text-left"
+            >
+              <div className="w-12 h-12 rounded-xl bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
+                <svg className="w-6 h-6 text-emerald-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="4" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-foreground font-semibold">Place Bet on Existing</p>
+                <p className="text-muted-foreground text-sm">Join an active bet from a friend or group</p>
+              </div>
+            </button>
+          </motion.div>
+        </motion.div>
+        )}
+      </AnimatePresence>
 
       <BottomNav active="home" />
     </div>

@@ -5,6 +5,7 @@ import { Home } from "./screens/Home";
 import { Friends } from "./screens/Friends";
 import { BetDetail } from "./screens/BetDetail";
 import { CreateBet } from "./screens/CreateBet";
+import { PlaceBet } from "./screens/PlaceBet";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 
 export const router = createBrowserRouter([
@@ -45,6 +46,14 @@ export const router = createBrowserRouter([
     element: (
       <ProtectedRoute>
         <CreateBet />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: "/place-bet",
+    element: (
+      <ProtectedRoute>
+        <PlaceBet />
       </ProtectedRoute>
     ),
   },
