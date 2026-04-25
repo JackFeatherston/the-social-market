@@ -24,6 +24,8 @@ CREATE TABLE profiles (
   id           UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   username     TEXT UNIQUE NOT NULL,
   display_name TEXT,
+  first_name   TEXT,
+  last_name    TEXT,
   avatar_url   TEXT,
   balance      NUMERIC(10, 2) NOT NULL DEFAULT 100.00,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -187,13 +189,24 @@ CREATE POLICY "wallet_own_read" ON wallet_transactions FOR SELECT USING (auth.ui
 
 -- 1. Auto-create a profile row when a new Supabase auth user signs up
 CREATE OR REPLACE FUNCTION handle_new_user()
-RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER AS $$
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public
+AS $$
 BEGIN
-  INSERT INTO profiles (id, username, display_name)
+  INSERT INTO public.profiles (id, username, display_name, first_name, last_name)
   VALUES (
     NEW.id,
     COALESCE(NEW.raw_user_meta_data->>'username', 'user_' || substr(NEW.id::text, 1, 8)),
-    COALESCE(NEW.raw_user_meta_data->>'display_name', split_part(NEW.email, '@', 1))
+    COALESCE(
+      NEW.raw_user_meta_data->>'display_name',
+      NULLIF(TRIM(
+        COALESCE(NEW.raw_user_meta_data->>'first_name', '') || ' ' ||
+        COALESCE(NEW.raw_user_meta_data->>'last_name', '')
+      ), ''),
+      NEW.raw_user_meta_data->>'username'
+    ),
+    NEW.raw_user_meta_data->>'first_name',
+    NEW.raw_user_meta_data->>'last_name'
   );
   RETURN NEW;
 END;

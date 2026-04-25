@@ -6,7 +6,7 @@ export function SignUp() {
   const navigate = useNavigate();
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -17,13 +17,14 @@ export function SignUp() {
     setLoading(true);
 
     const { error } = await supabase.auth.signUp({
-      email,
+      email: `${username}@thesocialmarket.internal`,
       password,
       options: {
         data: {
-          display_name: `${firstName} ${lastName}`.trim(),
+          username,
           first_name: firstName,
           last_name: lastName,
+          display_name: `${firstName} ${lastName}`.trim(),
         },
       },
     });
@@ -80,17 +81,17 @@ export function SignUp() {
           </div>
 
           <div className="space-y-2">
-            <label htmlFor="email" className="text-foreground/90">
-              Email
+            <label htmlFor="username" className="text-foreground/90">
+              Username
             </label>
             <input
-              type="email"
-              id="email"
+              type="text"
+              id="username"
               required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
               className="w-full px-4 py-3 rounded-2xl bg-input-background border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-              placeholder="Enter your email"
+              placeholder="Choose a username"
             />
           </div>
 
@@ -125,7 +126,7 @@ export function SignUp() {
 
         <p className="text-center text-muted-foreground">
           Already have an account?{" "}
-          <Link to="/signin" className="text-primary hover:underline">
+          <Link to="/" className="text-primary hover:underline">
             Sign In
           </Link>
         </p>
