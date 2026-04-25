@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
+import { supabase } from "../../lib/supabase";
 import { BottomNav } from "../components/BottomNav";
 
 type Tab = "friends" | "requests" | "find";
@@ -14,155 +15,244 @@ const AVATAR_COLORS = [
   "bg-sky-500",
 ];
 
+function getInitials(displayName: string | null, username: string): string {
+  if (displayName) {
+    const parts = displayName.trim().split(/\s+/);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return displayName.slice(0, 2).toUpperCase();
+  }
+  return username.slice(0, 2).toUpperCase();
+}
+
+function colorIndex(id: string): number {
+  let hash = 0;
+  for (const c of id) hash = (hash * 31 + c.charCodeAt(0)) & 0xffff;
+  return hash % AVATAR_COLORS.length;
+}
+
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const h = Math.floor(diff / 3_600_000);
+  if (h < 24) return `${Math.max(1, h)}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
 function Avatar({
-  initials,
-  colorIndex,
+  id,
+  displayName,
+  username,
   size = "md",
 }: {
-  initials: string;
-  colorIndex: number;
+  id: string;
+  displayName: string | null;
+  username: string;
   size?: "sm" | "md" | "lg";
 }) {
-  const color = AVATAR_COLORS[colorIndex % AVATAR_COLORS.length];
+  const color = AVATAR_COLORS[colorIndex(id)];
   const sizeClass =
-    size === "sm"
-      ? "w-8 h-8 text-xs"
-      : size === "lg"
-      ? "w-14 h-14 text-lg"
-      : "w-11 h-11 text-sm";
+    size === "sm" ? "w-8 h-8 text-xs" : size === "lg" ? "w-14 h-14 text-lg" : "w-11 h-11 text-sm";
   return (
-    <div
-      className={`${sizeClass} ${color} rounded-full flex items-center justify-center font-semibold text-white flex-shrink-0`}
-    >
-      {initials}
+    <div className={`${sizeClass} ${color} rounded-full flex items-center justify-center font-semibold text-white flex-shrink-0`}>
+      {getInitials(displayName, username)}
     </div>
   );
 }
 
-const leaderboard = [
-  { id: "1", initials: "MK", name: "Marcus K.", coins: 320, colorIndex: 0 },
-  { id: "me", initials: "YO", name: "You", coins: 180, colorIndex: 4 },
-  { id: "2", initials: "JP", name: "Jess P.", coins: 40, colorIndex: 1 },
-];
+type FriendRow = {
+  friendship_id: string;
+  friend_id: string;
+  username: string;
+  display_name: string | null;
+  balance: number;
+};
 
-const friends = [
-  {
-    id: "1",
-    initials: "MK",
-    name: "Marcus Kim",
-    username: "@marcusk",
-    sharedGroups: 3,
-    wins: 6,
-    losses: 2,
-    activeBets: 2,
-    colorIndex: 0,
-  },
-  {
-    id: "2",
-    initials: "JP",
-    name: "Jess Park",
-    username: "@jessp",
-    sharedGroups: 2,
-    wins: 4,
-    losses: 4,
-    activeBets: 1,
-    colorIndex: 1,
-  },
-  {
-    id: "3",
-    initials: "DL",
-    name: "Dev Lara",
-    username: "@devlara",
-    sharedGroups: 1,
-    wins: 2,
-    losses: 6,
-    activeBets: 0,
-    colorIndex: 2,
-  },
-  {
-    id: "4",
-    initials: "RL",
-    name: "Riley Lee",
-    username: "@rileyl",
-    sharedGroups: 1,
-    wins: 5,
-    losses: 1,
-    activeBets: 3,
-    colorIndex: 3,
-  },
-];
+type RequestRow = {
+  id: string;
+  created_at: string;
+  profile: { id: string; username: string; display_name: string | null };
+};
 
-const incomingRequests = [
-  {
-    id: "r1",
-    initials: "AJ",
-    name: "Alex Johnson",
-    username: "@alexj",
-    mutualFriends: 2,
-    sentAgo: "2h ago",
-    colorIndex: 4,
-  },
-  {
-    id: "r2",
-    initials: "SM",
-    name: "Sam Mora",
-    username: "@sammora",
-    mutualFriends: 1,
-    sentAgo: "1d ago",
-    colorIndex: 6,
-  },
-];
+type SuggestionRow = {
+  id: string;
+  username: string;
+  display_name: string | null;
+};
 
-const sentRequests = [
-  {
-    id: "s1",
-    initials: "TN",
-    name: "Taylor Ng",
-    username: "@taylorn",
-    sentAgo: "3d ago",
-    colorIndex: 5,
-  },
-];
-
-const suggestions = [
-  {
-    id: "p1",
-    initials: "CW",
-    name: "Chris Wu",
-    username: "@chriswu",
-    mutualFriends: 1,
-    colorIndex: 4,
-  },
-  {
-    id: "p2",
-    initials: "NB",
-    name: "Nina Bose",
-    username: "@ninab",
-    mutualFriends: 3,
-    colorIndex: 6,
-  },
-  {
-    id: "p3",
-    initials: "PK",
-    name: "Priya Kanna",
-    username: "@priyak",
-    mutualFriends: 0,
-    colorIndex: 5,
-  },
-];
+type LeaderboardEntry = FriendRow & { isMe: boolean };
 
 const RANK_LABELS = ["1", "2", "3"];
 
 export function Friends() {
   const [activeTab, setActiveTab] = useState<Tab>("friends");
-  const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
-  const [acceptedIds, setAcceptedIds] = useState<Set<string>>(new Set());
-  const [declinedIds, setDeclinedIds] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(true);
+  const [me, setMe] = useState<{ id: string; username: string; display_name: string | null; balance: number } | null>(null);
+  const [friends, setFriends] = useState<FriendRow[]>([]);
+  const [incoming, setIncoming] = useState<RequestRow[]>([]);
+  const [sent, setSent] = useState<RequestRow[]>([]);
+  const [suggestions, setSuggestions] = useState<SuggestionRow[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [pendingAdd, setPendingAdd] = useState<Set<string>>(new Set());
+  const defaultSuggestions = useRef<SuggestionRow[]>([]);
 
-  const pendingIncoming = incomingRequests.filter(
-    (r) => !acceptedIds.has(r.id) && !declinedIds.has(r.id)
-  );
-  const incomingCount = pendingIncoming.length;
+  useEffect(() => {
+    fetchAll();
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== "find") return;
+
+    if (!searchQuery.trim()) {
+      setSuggestions(defaultSuggestions.current);
+      return;
+    }
+
+    setSearchLoading(true);
+    const timer = setTimeout(async () => {
+      const excludeIds = [
+        me?.id,
+        ...friends.map((f) => f.friend_id),
+        ...incoming.map((r) => r.profile?.id),
+        ...sent.map((r) => r.profile?.id),
+      ].filter(Boolean) as string[];
+
+      let query = supabase
+        .from("profiles")
+        .select("id, username, display_name")
+        .or(`username.ilike.%${searchQuery}%,display_name.ilike.%${searchQuery}%`)
+        .limit(10);
+
+      if (excludeIds.length > 0) {
+        query = query.not("id", "in", `(${excludeIds.join(",")})`);
+      }
+
+      const { data } = await query;
+      setSuggestions(data ?? []);
+      setSearchLoading(false);
+    }, 300);
+
+    return () => { clearTimeout(timer); setSearchLoading(false); };
+  }, [searchQuery, activeTab]);
+
+  async function fetchAll() {
+    setLoading(true);
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setLoading(false); return; }
+
+    const [
+      { data: myProfile },
+      { data: friendsData },
+      { data: incomingData },
+      { data: sentData },
+    ] = await Promise.all([
+      supabase.from("profiles").select("id, username, display_name, balance").eq("id", user.id).single(),
+      supabase.from("friends_with_profiles").select("friendship_id, friend_id, username, display_name"),
+      supabase
+        .from("friendships")
+        .select("id, created_at, profiles!friendships_requester_id_fkey(id, username, display_name)")
+        .eq("addressee_id", user.id)
+        .eq("status", "pending"),
+      supabase
+        .from("friendships")
+        .select("id, created_at, profiles!friendships_addressee_id_fkey(id, username, display_name)")
+        .eq("requester_id", user.id)
+        .eq("status", "pending"),
+    ]);
+
+    const friendIds = (friendsData ?? []).map((f: any) => f.friend_id);
+    const sentProfileIds = (sentData ?? []).map((r: any) => (r.profiles as any)?.id).filter(Boolean);
+    const incomingIds = (incomingData ?? []).map((r: any) => (r.profiles as any)?.id).filter(Boolean);
+    const excludeIds = [user.id, ...friendIds, ...incomingIds, ...sentProfileIds].filter(Boolean);
+
+    const [{ data: balanceData }, { data: suggestionsData }] = await Promise.all([
+      friendIds.length > 0
+        ? supabase.from("profiles").select("id, balance").in("id", friendIds)
+        : Promise.resolve({ data: [] }),
+      supabase
+        .from("profiles")
+        .select("id, username, display_name")
+        .not("id", "in", `(${excludeIds.join(",")})`)
+        .limit(10),
+    ]);
+
+    const balanceMap = new Map<string, number>(
+      (balanceData ?? []).map((p: any) => [p.id, p.balance])
+    );
+
+    setMe(myProfile ?? null);
+    setFriends(
+      (friendsData ?? []).map((f: any) => ({
+        ...f,
+        balance: balanceMap.get(f.friend_id) ?? 0,
+      }))
+    );
+    setIncoming(
+      (incomingData ?? []).map((r: any) => ({
+        id: r.id,
+        created_at: r.created_at,
+        profile: r.profiles,
+      }))
+    );
+    setSent(
+      (sentData ?? []).map((r: any) => ({
+        id: r.id,
+        created_at: r.created_at,
+        profile: r.profiles,
+      }))
+    );
+    defaultSuggestions.current = suggestionsData ?? [];
+    setSuggestions(suggestionsData ?? []);
+    setLoading(false);
+  }
+
+  async function acceptRequest(friendshipId: string) {
+    await supabase.from("friendships").update({ status: "accepted" }).eq("id", friendshipId);
+    setIncoming((prev) => prev.filter((r) => r.id !== friendshipId));
+    fetchAll();
+  }
+
+  async function declineRequest(friendshipId: string) {
+    await supabase.from("friendships").delete().eq("id", friendshipId);
+    setIncoming((prev) => prev.filter((r) => r.id !== friendshipId));
+  }
+
+  async function sendRequest(profileId: string) {
+    if (!me) return;
+    const person = suggestions.find((p) => p.id === profileId);
+    setPendingAdd((s) => new Set([...s, profileId]));
+    setSuggestions((prev) => prev.filter((p) => p.id !== profileId));
+    const { data } = await supabase
+      .from("friendships")
+      .insert({ requester_id: me.id, addressee_id: profileId })
+      .select("id, created_at")
+      .single();
+    if (data && person) {
+      setSent((prev) => [
+        ...prev,
+        { id: data.id, created_at: data.created_at, profile: { id: person.id, username: person.username, display_name: person.display_name } },
+      ]);
+    }
+  }
+
+  const leaderboard: LeaderboardEntry[] = me
+    ? [...friends.map((f) => ({ ...f, isMe: false })), { friendship_id: "me", friend_id: me.id, username: me.username, display_name: me.display_name, balance: me.balance, isMe: true }]
+        .sort((a, b) => b.balance - a.balance)
+        .slice(0, 3)
+    : [];
+
+  const filteredSuggestions = suggestions.filter((p) => {
+    const q = searchQuery.toLowerCase();
+    return !q || p.username.toLowerCase().includes(q) || (p.display_name ?? "").toLowerCase().includes(q);
+  });
+
+  if (loading) {
+    return (
+      <div className="relative min-h-screen bg-background pb-24 flex items-center justify-center">
+        <p className="text-muted-foreground text-sm">Loading...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="relative min-h-screen bg-background pb-24">
@@ -171,7 +261,10 @@ export function Friends() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <h1 className="text-foreground text-2xl font-bold">Friends</h1>
-          <button className="w-9 h-9 rounded-full border border-border flex items-center justify-center text-foreground hover:bg-muted transition-colors text-lg leading-none">
+          <button
+            onClick={() => setActiveTab("find")}
+            className="w-9 h-9 rounded-full border border-border flex items-center justify-center text-foreground hover:bg-muted transition-colors text-lg leading-none"
+          >
             +
           </button>
         </div>
@@ -180,6 +273,8 @@ export function Friends() {
         <div className="relative">
           <input
             type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search friends or @username"
             className="w-full px-4 py-3 pl-10 rounded-xl bg-input-background border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 text-sm"
           />
@@ -193,7 +288,7 @@ export function Friends() {
           {(
             [
               { id: "friends", label: "Friends" },
-              { id: "requests", label: "Requests", badge: incomingCount },
+              { id: "requests", label: "Requests", badge: incoming.length },
               { id: "find", label: "Find people" },
             ] as { id: Tab; label: string; badge?: number }[]
           ).map((tab) => (
@@ -221,59 +316,60 @@ export function Friends() {
           <div className="space-y-6 pt-1">
 
             {/* Leaderboard */}
-            <div>
-              <p className="text-xs font-semibold text-muted-foreground tracking-widest mb-4">
-                LEADERBOARD THIS WEEK
-              </p>
-              <div className="space-y-4">
-                {leaderboard.map((entry, i) => (
-                  <div key={entry.id} className="flex items-center gap-3">
-                    <span className={`text-sm w-6 text-center tabular-nums font-bold ${i === 0 ? "text-foreground" : "text-muted-foreground"}`}>{RANK_LABELS[i]}</span>
-                    <Avatar initials={entry.initials} colorIndex={entry.colorIndex} />
-                    <span className={`flex-1 ${i === 0 ? "text-foreground font-semibold" : "text-foreground"}`}>
-                      {entry.name}
-                    </span>
-                    <span className={`text-sm tabular-nums ${i === 0 ? "text-foreground font-bold" : "text-muted-foreground"}`}>
-                      +{entry.coins}
-                      <span className="text-xs font-normal ml-0.5">pts</span>
-                    </span>
-                  </div>
-                ))}
+            {leaderboard.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground tracking-widest mb-4">
+                  LEADERBOARD
+                </p>
+                <div className="space-y-4">
+                  {leaderboard.map((entry, i) => (
+                    <div key={entry.friend_id} className="flex items-center gap-3">
+                      <span className={`text-sm w-6 text-center tabular-nums font-bold ${i === 0 ? "text-foreground" : "text-muted-foreground"}`}>
+                        {RANK_LABELS[i]}
+                      </span>
+                      <Avatar id={entry.friend_id} displayName={entry.display_name} username={entry.isMe ? "You" : entry.username} />
+                      <span className={`flex-1 ${i === 0 ? "text-foreground font-semibold" : "text-foreground"}`}>
+                        {entry.isMe ? "You" : (entry.display_name ?? entry.username)}
+                      </span>
+                      <span className={`text-sm tabular-nums ${i === 0 ? "text-foreground font-bold" : "text-muted-foreground"}`}>
+                        ${entry.balance.toFixed(0)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Friends List */}
             <div>
               <p className="text-xs font-semibold text-muted-foreground tracking-widest mb-2">
                 YOUR FRIENDS
               </p>
-              <div className="divide-y divide-border">
-                {friends.map((friend) => (
-                  <div key={friend.id} className="py-4 flex items-center gap-3">
-                    <Avatar initials={friend.initials} colorIndex={friend.colorIndex} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-foreground font-medium leading-tight">{friend.name}</p>
-                      <p className="text-muted-foreground text-xs mt-0.5">
-                        {friend.username} · {friend.sharedGroups} group{friend.sharedGroups !== 1 ? "s" : ""}
-                      </p>
-                    </div>
-                    <div className="flex flex-col items-end gap-0.5">
-                      <p className="text-sm tabular-nums text-foreground">
-                        <span className="font-semibold">{friend.wins}</span>
-                        <span className="text-muted-foreground text-xs">W</span>
-                        <span className="text-muted-foreground mx-1">·</span>
-                        <span className="font-semibold">{friend.losses}</span>
-                        <span className="text-muted-foreground text-xs">L</span>
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {friend.activeBets === 0
-                          ? "no bets"
-                          : `${friend.activeBets} live`}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              {friends.length === 0 ? (
+                <p className="text-muted-foreground text-sm py-4">No friends yet. Find people to add.</p>
+              ) : (
+                <div className="divide-y divide-border">
+                  {friends
+                    .filter((f) => {
+                      const q = searchQuery.toLowerCase();
+                      return !q || (f.display_name ?? "").toLowerCase().includes(q) || f.username.toLowerCase().includes(q);
+                    })
+                    .map((friend) => (
+                      <div key={friend.friend_id} className="py-4 flex items-center gap-3">
+                        <Avatar id={friend.friend_id} displayName={friend.display_name} username={friend.username} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-foreground font-medium leading-tight">
+                            {friend.display_name ?? friend.username}
+                          </p>
+                          <p className="text-muted-foreground text-xs mt-0.5">@{friend.username}</p>
+                        </div>
+                        <span className="text-sm tabular-nums text-muted-foreground">
+                          ${friend.balance.toFixed(0)}
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -283,58 +379,65 @@ export function Friends() {
           <div className="space-y-6 pt-1">
             <div>
               <p className="text-xs font-semibold text-muted-foreground tracking-widest mb-3">
-                INCOMING {incomingCount > 0 && `(${incomingCount})`}
+                INCOMING {incoming.length > 0 && `(${incoming.length})`}
               </p>
-              <div className="space-y-3">
-                {pendingIncoming.map((req) => (
-                  <div key={req.id} className="flex gap-3 py-1">
-                    <Avatar initials={req.initials} colorIndex={req.colorIndex} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-foreground font-medium leading-tight">{req.name}</p>
-                      <p className="text-muted-foreground text-xs mt-0.5">
-                        {req.username} · {req.mutualFriends} mutual · {req.sentAgo}
-                      </p>
-                      <div className="flex gap-2 mt-2.5">
-                        <button
-                          onClick={() => setAcceptedIds((s) => new Set([...s, req.id]))}
-                          className="px-4 py-1.5 rounded-lg bg-foreground text-background text-sm font-medium hover:opacity-90 transition-opacity"
-                        >
-                          Accept
-                        </button>
-                        <button
-                          onClick={() => setDeclinedIds((s) => new Set([...s, req.id]))}
-                          className="px-4 py-1.5 rounded-lg text-muted-foreground text-sm hover:text-foreground transition-colors"
-                        >
-                          Decline
-                        </button>
+              {incoming.length === 0 ? (
+                <p className="text-muted-foreground text-sm">You're all caught up.</p>
+              ) : (
+                <div className="space-y-4">
+                  {incoming.map((req) => (
+                    <div key={req.id} className="flex gap-3 py-1">
+                      <Avatar id={req.profile.id} displayName={req.profile.display_name} username={req.profile.username} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-foreground font-medium leading-tight">
+                          {req.profile.display_name ?? req.profile.username}
+                        </p>
+                        <p className="text-muted-foreground text-xs mt-0.5">
+                          @{req.profile.username} · {timeAgo(req.created_at)}
+                        </p>
+                        <div className="flex gap-2 mt-2.5">
+                          <button
+                            onClick={() => acceptRequest(req.id)}
+                            className="px-4 py-1.5 rounded-lg bg-foreground text-background text-sm font-medium hover:opacity-90 transition-opacity"
+                          >
+                            Accept
+                          </button>
+                          <button
+                            onClick={() => declineRequest(req.id)}
+                            className="px-4 py-1.5 rounded-lg text-muted-foreground text-sm hover:text-foreground transition-colors"
+                          >
+                            Decline
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
-                {incomingCount === 0 && (
-                  <p className="text-muted-foreground text-sm">You're all caught up.</p>
-                )}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
 
-            <div>
-              <p className="text-xs font-semibold text-muted-foreground tracking-widest mb-3">
-                SENT
-              </p>
-              <div className="space-y-3">
-                {sentRequests.map((req) => (
-                  <div key={req.id} className="flex items-center gap-3 py-1">
-                    <Avatar initials={req.initials} colorIndex={req.colorIndex} />
-                    <div>
-                      <p className="text-foreground font-medium leading-tight">{req.name}</p>
-                      <p className="text-muted-foreground text-xs mt-0.5">
-                        {req.username} · pending · {req.sentAgo}
-                      </p>
+            {sent.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground tracking-widest mb-3">
+                  SENT
+                </p>
+                <div className="space-y-3">
+                  {sent.map((req) => (
+                    <div key={req.id} className="flex items-center gap-3 py-1">
+                      <Avatar id={req.profile.id} displayName={req.profile.display_name} username={req.profile.username} />
+                      <div>
+                        <p className="text-foreground font-medium leading-tight">
+                          {req.profile.display_name ?? req.profile.username}
+                        </p>
+                        <p className="text-muted-foreground text-xs mt-0.5">
+                          @{req.profile.username} · pending · {timeAgo(req.created_at)}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         )}
 
@@ -344,33 +447,36 @@ export function Friends() {
             <p className="text-xs font-semibold text-muted-foreground tracking-widest mb-3">
               SUGGESTED
             </p>
-            <div className="divide-y divide-border">
-              {suggestions.map((person) => (
-                <div key={person.id} className="py-4 flex items-center gap-3">
-                  <Avatar initials={person.initials} colorIndex={person.colorIndex} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-foreground font-medium leading-tight">{person.name}</p>
-                    <p className="text-muted-foreground text-xs mt-0.5">
-                      {person.username}
-                      {person.mutualFriends > 0
-                        ? ` · ${person.mutualFriends} mutual`
-                        : ""}
-                    </p>
+            {searchLoading ? (
+              <p className="text-muted-foreground text-sm">Searching...</p>
+            ) : filteredSuggestions.length === 0 ? (
+              <p className="text-muted-foreground text-sm">No results.</p>
+            ) : (
+              <div className="divide-y divide-border">
+                {filteredSuggestions.map((person) => (
+                  <div key={person.id} className="py-4 flex items-center gap-3">
+                    <Avatar id={person.id} displayName={person.display_name} username={person.username} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-foreground font-medium leading-tight">
+                        {person.display_name ?? person.username}
+                      </p>
+                      <p className="text-muted-foreground text-xs mt-0.5">@{person.username}</p>
+                    </div>
+                    <button
+                      onClick={() => sendRequest(person.id)}
+                      disabled={pendingAdd.has(person.id)}
+                      className={`text-sm font-medium transition-colors ${
+                        pendingAdd.has(person.id)
+                          ? "text-muted-foreground cursor-default"
+                          : "text-primary hover:opacity-70"
+                      }`}
+                    >
+                      {pendingAdd.has(person.id) ? "Sent" : "Add"}
+                    </button>
                   </div>
-                  <button
-                    onClick={() => setAddedIds((s) => new Set([...s, person.id]))}
-                    disabled={addedIds.has(person.id)}
-                    className={`text-sm font-medium transition-colors ${
-                      addedIds.has(person.id)
-                        ? "text-muted-foreground cursor-default"
-                        : "text-primary hover:opacity-70"
-                    }`}
-                  >
-                    {addedIds.has(person.id) ? "Sent" : "Add"}
-                  </button>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
