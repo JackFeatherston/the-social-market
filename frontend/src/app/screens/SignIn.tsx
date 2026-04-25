@@ -82,7 +82,7 @@ export function SignIn() {
 
         <p className="text-center text-muted-foreground">
           New here?{" "}
-          <Link to="/" className="text-primary hover:underline">
+          <Link to="/signup" className="text-primary hover:underline">
             Sign Up
           </Link>
         </p>
