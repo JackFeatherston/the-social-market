@@ -3,6 +3,7 @@ import { SignUp } from "./screens/SignUp";
 import { SignIn } from "./screens/SignIn";
 import { Home } from "./screens/Home";
 import { Friends } from "./screens/Friends";
+import { Profile } from "./screens/Profile";
 import { BetDetail } from "./screens/BetDetail";
 import { CreateBet } from "./screens/CreateBet";
 import { PlaceBet } from "./screens/PlaceBet";
