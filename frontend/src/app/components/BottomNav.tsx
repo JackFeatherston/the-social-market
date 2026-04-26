@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { Home, Users, Plus, TrendingUp, User } from "lucide-react";
+import { Home, Users, TrendingUp, User } from "lucide-react";
 import { useBetMenu } from "../context/BetMenuContext";
 
 interface BottomNavProps {
@@ -18,7 +18,7 @@ export function BottomNav({ active }: BottomNavProps) {
             }`}
           >
             <Home size={22} strokeWidth={active === "home" ? 2.5 : 2} />
-            <span className="text-[9px] font-medium">Home</span>
+            <span className="text-[10px] font-medium">Home</span>
           </button>
         </Link>
 
@@ -29,7 +29,7 @@ export function BottomNav({ active }: BottomNavProps) {
             }`}
           >
             <Users size={22} strokeWidth={active === "friends" ? 2.5 : 2} />
-            <span className="text-[9px] font-medium">Friends</span>
+            <span className="text-[10px] font-medium">Friends</span>
           </button>
         </Link>
 
@@ -44,9 +44,31 @@ export function BottomNav({ active }: BottomNavProps) {
                 : "bg-primary shadow-primary/30"
             }`}
           >
-            <Plus size={28} strokeWidth={2.5} className="text-white" />
+            <svg
+              width="32"
+              height="32"
+              viewBox="0 0 56 56"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              {/* First die - showing 3 */}
+              <rect x="2" y="8" width="24" height="24" rx="4" fill="white" opacity="0.2" />
+              <rect x="2" y="8" width="24" height="24" rx="4" stroke="white" strokeWidth="2.5" />
+              <circle cx="10" cy="16" r="2" fill="white" />
+              <circle cx="14" cy="20" r="2" fill="white" />
+              <circle cx="18" cy="24" r="2" fill="white" />
+              {/* Second die - showing 6 */}
+              <rect x="30" y="24" width="24" height="24" rx="4" fill="white" opacity="0.2" />
+              <rect x="30" y="24" width="24" height="24" rx="4" stroke="white" strokeWidth="2.5" />
+              <circle cx="36" cy="30" r="2" fill="white" />
+              <circle cx="36" cy="36" r="2" fill="white" />
+              <circle cx="36" cy="42" r="2" fill="white" />
+              <circle cx="48" cy="30" r="2" fill="white" />
+              <circle cx="48" cy="36" r="2" fill="white" />
+              <circle cx="48" cy="42" r="2" fill="white" />
+            </svg>
           </div>
-          <span className="text-[9px] font-medium text-foreground mt-1">Create</span>
+          <span className="text-[13px] font-medium text-foreground mt-1">Create</span>
         </button>
 
         <Link to="/bets">
@@ -56,7 +78,7 @@ export function BottomNav({ active }: BottomNavProps) {
             }`}
           >
             <TrendingUp size={22} strokeWidth={active === "bets" ? 2.5 : 2} />
-            <span className="text-[9px] font-medium">Bets</span>
+            <span className="text-[10px] font-medium">Bets</span>
           </button>
         </Link>
 
@@ -67,7 +89,7 @@ export function BottomNav({ active }: BottomNavProps) {
             }`}
           >
             <User size={22} strokeWidth={active === "profile" ? 2.5 : 2} />
-            <span className="text-[9px] font-medium">Profile</span>
+            <span className="text-[10px] font-medium">Profile</span>
           </button>
         </Link>
       </div>
