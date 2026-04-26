@@ -54,6 +54,32 @@ function colorIndex(id: string): number {
   return hash % AVATAR_COLORS.length;
 }
 
+const AVATAR_COLORS = [
+  "bg-teal-500",
+  "bg-rose-400",
+  "bg-violet-500",
+  "bg-pink-400",
+  "bg-indigo-400",
+  "bg-amber-500",
+  "bg-emerald-500",
+  "bg-sky-500",
+];
+
+function getInitials(displayName: string | null, username: string): string {
+  if (displayName) {
+    const parts = displayName.trim().split(/\s+/);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return displayName.slice(0, 2).toUpperCase();
+  }
+  return username.slice(0, 2).toUpperCase();
+}
+
+function colorIndex(id: string): number {
+  let hash = 0;
+  for (const c of id) hash = (hash * 31 + c.charCodeAt(0)) & 0xffff;
+  return hash % AVATAR_COLORS.length;
+}
+
 const STATUS_COLORS: Record<string, string> = {
   active: "bg-primary",
   pending: "bg-muted",
@@ -99,6 +125,7 @@ export function Home() {
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [usernameMap, setUsernameMap] = useState<Record<string, string>>({});
   const [displayNameMap, setDisplayNameMap] = useState<Record<string, string | null>>({});
+  const [balanceData, setBalanceData] = useState<BalancePoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [inviteCount, setInviteCount] = useState(0);
 
@@ -189,6 +216,65 @@ export function Home() {
                   {profile ? formatCurrency(profile.balance) : "..."}
                 </span>
               </div>
+            </div>
+          </div>
+
+          <div className="glass rounded-3xl p-5 space-y-3 shadow-sm">
+            <div className="flex items-center justify-between">
+              <h3 className="text-[#F9FAFB] font-heading">Balance History</h3>
+              {balancePct !== null && (
+                <span className={`text-small ${balancePct >= 0 ? "text-success" : "text-destructive"}`}>
+                  {balancePct >= 0 ? "+" : ""}{balancePct}%
+                </span>
+              )}
+            </div>
+            <div className="w-full h-[180px] min-h-[180px]">
+              <ResponsiveContainer width="100%" height={180}>
+                <LineChart data={balanceData} margin={{ top: 15, right: 10, bottom: 5, left: -20 }}>
+                  <XAxis
+                    dataKey="date"
+                    stroke="currentColor"
+                    className="text-muted-foreground"
+                    tick={{ fill: "currentColor" }}
+                    tickLine={false}
+                    axisLine={false}
+                    style={{ fontSize: "12px" }}
+                    key="xaxis"
+                  />
+                  <YAxis
+                    stroke="currentColor"
+                    className="text-muted-foreground"
+                    tick={{ fill: "currentColor" }}
+                    tickLine={false}
+                    axisLine={false}
+                    style={{ fontSize: "12px" }}
+                    tickFormatter={(value) => `$${value}`}
+                    key="yaxis"
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "rgba(0, 0, 0, 0.4)",
+                      backdropFilter: "blur(8px)",
+                      border: "1px solid rgba(255, 255, 255, 0.1)",
+                      borderRadius: "12px",
+                      padding: "8px 12px",
+                    }}
+                    labelStyle={{ color: "var(--foreground)" }}
+                    itemStyle={{ color: "var(--primary)" }}
+                    formatter={(value: number) => [`$${value}`, "Balance"]}
+                    key="tooltip"
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="amount"
+                    stroke="var(--primary)"
+                    strokeWidth={3}
+                    dot={{ fill: "var(--primary)", strokeWidth: 2, r: 4 }}
+                    activeDot={{ r: 6 }}
+                    key="line-amount"
+                  />
+                </LineChart>
+              </ResponsiveContainer>
             </div>
           </div>
 
