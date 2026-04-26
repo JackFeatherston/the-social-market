@@ -426,7 +426,7 @@ export function Friends() {
                       </button>
                       <button
                         onClick={() => acceptInvite(invite.participant_id)}
-                        disabled={!selected || processing || (me !== null && Number(invite.amount) > Number(me.balance))}
+                        disabled={!pickValid || processing || (me !== null && Number(invite.amount) > Number(me.balance))}
                         className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium disabled:opacity-40"
                       >
                         {processing ? "..." : "Accept"}
