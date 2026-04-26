@@ -592,13 +592,85 @@ WHERE (f.requester_id = auth.uid() OR f.addressee_id = auth.uid())
   AND f.status = 'accepted';
 
 -- Bets summary with creator info, participant count, and live pot
-CREATE VIEW bets_summary AS
+CREATE VIEW bets_summary
+  WITH (security_invoker = on)
+AS
 SELECT
   b.*,
   p.username       AS creator_username,
   p.display_name   AS creator_display_name,
   p.avatar_url     AS creator_avatar_url,
   COUNT(DISTINCT bp.user_id)                                       AS participant_count,
+  COALESCE(SUM(bp.amount) FILTER (WHERE bp.status = 'accepted'), 0) AS total_pot
+FROM bets b
+JOIN profiles p ON p.id = b.creator_id
+LEFT JOIN bet_participants bp ON bp.bet_id = b.id
+GROUP BY b.id, p.username, p.display_name, p.avatar_url;
+
+-- ============================================================
+-- Location settlement
+-- ============================================================
+
+ALTER TABLE bets
+  ADD COLUMN IF NOT EXISTS settlement_method       TEXT NOT NULL DEFAULT 'group_vote',
+  ADD COLUMN IF NOT EXISTS location_mode           TEXT,
+  ADD COLUMN IF NOT EXISTS location_result_type    TEXT,
+  ADD COLUMN IF NOT EXISTS location_name           TEXT,
+  ADD COLUMN IF NOT EXISTS location_lat            DOUBLE PRECISION,
+  ADD COLUMN IF NOT EXISTS location_lng            DOUBLE PRECISION,
+  ADD COLUMN IF NOT EXISTS check_in_radius_meters  INTEGER DEFAULT 100,
+  ADD COLUMN IF NOT EXISTS check_in_deadline       TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS tracking_start          TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS tracking_end            TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS location_target_user_id UUID REFERENCES profiles(id),
+  ADD COLUMN IF NOT EXISTS final_outcome           TEXT,
+  ADD COLUMN IF NOT EXISTS settled_at              TIMESTAMPTZ;
+
+CREATE TABLE IF NOT EXISTS bet_location_checkins (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  bet_id           UUID NOT NULL REFERENCES bets(id) ON DELETE CASCADE,
+  user_id          UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  lat              DOUBLE PRECISION NOT NULL,
+  lng              DOUBLE PRECISION NOT NULL,
+  distance_meters  DOUBLE PRECISION,
+  checked_in_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_location_checkins_bet  ON bet_location_checkins(bet_id);
+CREATE INDEX IF NOT EXISTS idx_location_checkins_user ON bet_location_checkins(user_id);
+
+ALTER TABLE bet_location_checkins ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "checkins_read" ON bet_location_checkins FOR SELECT USING (
+  EXISTS (
+    SELECT 1 FROM bet_participants bp
+    WHERE bp.bet_id = bet_location_checkins.bet_id
+      AND bp.user_id = auth.uid() AND bp.status = 'accepted'
+  ) OR EXISTS (
+    SELECT 1 FROM bets b
+    WHERE b.id = bet_location_checkins.bet_id AND b.creator_id = auth.uid()
+  )
+);
+
+CREATE POLICY "checkins_insert_own" ON bet_location_checkins FOR INSERT WITH CHECK (
+  auth.uid() = user_id AND EXISTS (
+    SELECT 1 FROM bet_participants bp
+    WHERE bp.bet_id = bet_location_checkins.bet_id
+      AND bp.user_id = auth.uid() AND bp.status = 'accepted'
+  )
+);
+
+-- Recreate view so Postgres picks up the new b.* columns
+DROP VIEW bets_summary;
+CREATE VIEW bets_summary
+  WITH (security_invoker = on)
+AS
+SELECT
+  b.*,
+  p.username       AS creator_username,
+  p.display_name   AS creator_display_name,
+  p.avatar_url     AS creator_avatar_url,
+  COUNT(DISTINCT bp.user_id)                                        AS participant_count,
   COALESCE(SUM(bp.amount) FILTER (WHERE bp.status = 'accepted'), 0) AS total_pot
 FROM bets b
 JOIN profiles p ON p.id = b.creator_id
