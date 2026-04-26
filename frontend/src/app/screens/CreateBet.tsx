@@ -55,6 +55,7 @@ export function CreateBet() {
   const [closeDate, setCloseDate] = useState("");
   const [launching, setLaunching] = useState(false);
   const [launchError, setLaunchError] = useState<string | null>(null);
+  const [userBalance, setUserBalance] = useState<number | null>(null);
 
   useEffect(() => {
     async function loadFriends() {
@@ -64,7 +65,19 @@ export function CreateBet() {
       setFriendsList(data ?? []);
       setFriendsLoading(false);
     }
+    async function loadBalance() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data } = await supabase
+          .from("profiles")
+          .select("balance")
+          .eq("id", user.id)
+          .single();
+        setUserBalance(data?.balance ?? null);
+      }
+    }
     loadFriends();
+    loadBalance();
   }, []);
 
   const filteredFriends = friendsList.filter((f) => {
@@ -82,6 +95,12 @@ export function CreateBet() {
     if (!betTitle || !betType || !wager || !closeDate) return;
     setLaunching(true);
     setLaunchError(null);
+
+    if (userBalance !== null && parseFloat(wager) > userBalance) {
+      setLaunchError(`Insufficient balance. You have $${userBalance.toFixed(2)} available.`);
+      setLaunching(false);
+      return;
+    }
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
@@ -315,7 +334,12 @@ export function CreateBet() {
             )}
 
             <div className="glass-strong rounded-2xl p-4 space-y-2">
-              <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">Wager</p>
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">Wager</p>
+                <p className="text-xs text-muted-foreground">
+                  Balance: ${userBalance !== null ? userBalance.toFixed(2) : "..."}
+                </p>
+              </div>
               <div className="flex items-center gap-2">
                 <span className="text-primary text-lg font-bold">$</span>
                 <input
@@ -323,9 +347,14 @@ export function CreateBet() {
                   value={wager}
                   onChange={(e) => setWager(e.target.value)}
                   placeholder="0"
+                  min="0"
+                  max={userBalance ?? undefined}
                   className="flex-1 bg-transparent text-foreground text-2xl font-bold outline-none placeholder:text-muted-foreground"
                 />
               </div>
+              {wager && userBalance !== null && parseFloat(wager) > userBalance && (
+                <p className="text-destructive text-xs">Exceeds your available balance.</p>
+              )}
             </div>
 
             <div className="flex gap-3">
@@ -337,7 +366,7 @@ export function CreateBet() {
               </button>
               <button
                 onClick={() => setStep(4)}
-                disabled={!betType || !wager}
+                disabled={!betType || !wager || (userBalance !== null && parseFloat(wager) > userBalance)}
                 className="flex-1 py-3.5 rounded-2xl bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-40"
               >
                 Next
