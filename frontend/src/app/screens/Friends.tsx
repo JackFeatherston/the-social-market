@@ -255,8 +255,8 @@ export function Friends() {
   }
 
   return (
-    <div className="relative min-h-screen bg-background pb-24">
-      <div className="px-6 pt-8 space-y-4">
+    <div className="relative h-full flex flex-col bg-background">
+      <div className="flex-1 overflow-y-auto scrollbar-hide px-6 pt-8 space-y-4">
 
         {/* Header */}
         <div className="flex items-center justify-between">
