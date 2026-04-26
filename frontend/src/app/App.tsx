@@ -34,7 +34,7 @@ export default function App() {
                     animate={{ y: 0 }}
                     exit={{ y: "100%" }}
                     transition={{ type: "spring", damping: 30, stiffness: 300 }}
-                    className="w-full bg-card rounded-t-3xl p-5 space-y-3 border-t border-x border-border pb-10"
+                    className="w-full bg-[#16181d] rounded-t-3xl p-5 space-y-3 border-t border-x border-border pb-10"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <div className="w-10 h-1 bg-border rounded-full mx-auto mb-4" />
