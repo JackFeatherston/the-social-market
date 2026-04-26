@@ -1,18 +1,14 @@
 import { useState, useEffect, useRef } from "react";
+import { useLocation } from "react-router";
+import { Bell } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { BottomNav } from "../components/BottomNav";
 
 type Tab = "friends" | "requests" | "find";
 
 const AVATAR_COLORS = [
-  "bg-teal-500",
-  "bg-rose-400",
-  "bg-violet-500",
-  "bg-pink-400",
-  "bg-indigo-400",
-  "bg-amber-500",
-  "bg-emerald-500",
-  "bg-sky-500",
+  "bg-teal-500", "bg-rose-400", "bg-violet-500", "bg-pink-400",
+  "bg-indigo-400", "bg-amber-500", "bg-emerald-500", "bg-sky-500",
 ];
 
 function getInitials(displayName: string | null, username: string): string {
@@ -37,20 +33,20 @@ function timeAgo(iso: string): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-function Avatar({
-  id,
-  displayName,
-  username,
-  size = "md",
-}: {
-  id: string;
-  displayName: string | null;
-  username: string;
-  size?: "sm" | "md" | "lg";
+function getOutcomeOptions(betType: string): string[] {
+  switch (betType) {
+    case "above-below": return ["Above", "Below"];
+    case "happens-or-not": return ["Yes", "No"];
+    case "how-many": return ["More", "Less"];
+    default: return ["Yes", "No"];
+  }
+}
+
+function Avatar({ id, displayName, username, size = "md" }: {
+  id: string; displayName: string | null; username: string; size?: "sm" | "md" | "lg";
 }) {
   const color = AVATAR_COLORS[colorIndex(id)];
-  const sizeClass =
-    size === "sm" ? "w-8 h-8 text-xs" : size === "lg" ? "w-14 h-14 text-lg" : "w-11 h-11 text-sm";
+  const sizeClass = size === "sm" ? "w-8 h-8 text-xs" : size === "lg" ? "w-14 h-14 text-lg" : "w-11 h-11 text-sm";
   return (
     <div className={`${sizeClass} ${color} rounded-full flex items-center justify-center font-semibold text-white flex-shrink-0`}>
       {getInitials(displayName, username)}
@@ -58,31 +54,25 @@ function Avatar({
   );
 }
 
-type FriendRow = {
-  friendship_id: string;
-  friend_id: string;
-  username: string;
-  display_name: string | null;
-  balance: number;
-};
-
-type RequestRow = {
-  id: string;
-  created_at: string;
-  profile: { id: string; username: string; display_name: string | null };
-};
-
-type SuggestionRow = {
-  id: string;
-  username: string;
-  display_name: string | null;
-};
-
+type FriendRow = { friendship_id: string; friend_id: string; username: string; display_name: string | null; balance: number };
+type RequestRow = { id: string; created_at: string; profile: { id: string; username: string; display_name: string | null } };
+type SuggestionRow = { id: string; username: string; display_name: string | null };
 type LeaderboardEntry = FriendRow & { isMe: boolean };
+type Invite = {
+  participant_id: string;
+  bet_id: string;
+  amount: number;
+  bet_title: string;
+  bet_type: string;
+  creator_id: string;
+  creator_username: string;
+  creator_display_name: string | null;
+};
 
 const RANK_LABELS = ["1", "2", "3"];
 
 export function Friends() {
+  const location = useLocation();
   const [activeTab, setActiveTab] = useState<Tab>("friends");
   const [loading, setLoading] = useState(true);
   const [me, setMe] = useState<{ id: string; username: string; display_name: string | null; balance: number } | null>(null);
@@ -93,20 +83,17 @@ export function Friends() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchLoading, setSearchLoading] = useState(false);
   const [pendingAdd, setPendingAdd] = useState<Set<string>>(new Set());
+  const [invites, setInvites] = useState<Invite[]>([]);
+  const [showInbox, setShowInbox] = useState(() => !!(location.state as any)?.openInbox);
+  const [outcomeSelections, setOutcomeSelections] = useState<Record<string, string>>({});
+  const [processingInvite, setProcessingInvite] = useState<string | null>(null);
   const defaultSuggestions = useRef<SuggestionRow[]>([]);
 
-  useEffect(() => {
-    fetchAll();
-  }, []);
+  useEffect(() => { fetchAll(); }, []);
 
   useEffect(() => {
     if (activeTab !== "find") return;
-
-    if (!searchQuery.trim()) {
-      setSuggestions(defaultSuggestions.current);
-      return;
-    }
-
+    if (!searchQuery.trim()) { setSuggestions(defaultSuggestions.current); return; }
     setSearchLoading(true);
     const timer = setTimeout(async () => {
       const excludeIds = [
@@ -115,28 +102,18 @@ export function Friends() {
         ...incoming.map((r) => r.profile?.id),
         ...sent.map((r) => r.profile?.id),
       ].filter(Boolean) as string[];
-
-      let query = supabase
-        .from("profiles")
-        .select("id, username, display_name")
-        .or(`username.ilike.%${searchQuery}%,display_name.ilike.%${searchQuery}%`)
-        .limit(10);
-
-      if (excludeIds.length > 0) {
-        query = query.not("id", "in", `(${excludeIds.join(",")})`);
-      }
-
+      let query = supabase.from("profiles").select("id, username, display_name")
+        .or(`username.ilike.%${searchQuery}%,display_name.ilike.%${searchQuery}%`).limit(10);
+      if (excludeIds.length > 0) query = query.not("id", "in", `(${excludeIds.join(",")})`);
       const { data } = await query;
       setSuggestions(data ?? []);
       setSearchLoading(false);
     }, 300);
-
     return () => { clearTimeout(timer); setSearchLoading(false); };
   }, [searchQuery, activeTab]);
 
   async function fetchAll() {
     setLoading(true);
-
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setLoading(false); return; }
 
@@ -145,19 +122,18 @@ export function Friends() {
       { data: friendsData },
       { data: incomingData },
       { data: sentData },
+      { data: rawInvites },
     ] = await Promise.all([
       supabase.from("profiles").select("id, username, display_name, balance").eq("id", user.id).single(),
       supabase.from("friends_with_profiles").select("friendship_id, friend_id, username, display_name"),
-      supabase
-        .from("friendships")
+      supabase.from("friendships")
         .select("id, created_at, profiles!friendships_requester_id_fkey(id, username, display_name)")
-        .eq("addressee_id", user.id)
-        .eq("status", "pending"),
-      supabase
-        .from("friendships")
+        .eq("addressee_id", user.id).eq("status", "pending"),
+      supabase.from("friendships")
         .select("id, created_at, profiles!friendships_addressee_id_fkey(id, username, display_name)")
-        .eq("requester_id", user.id)
-        .eq("status", "pending"),
+        .eq("requester_id", user.id).eq("status", "pending"),
+      supabase.from("bet_participants").select("id, bet_id, amount")
+        .eq("user_id", user.id).eq("status", "invited"),
     ]);
 
     const friendIds = (friendsData ?? []).map((f: any) => f.friend_id);
@@ -169,40 +145,41 @@ export function Friends() {
       friendIds.length > 0
         ? supabase.from("profiles").select("id, balance").in("id", friendIds)
         : Promise.resolve({ data: [] }),
-      supabase
-        .from("profiles")
-        .select("id, username, display_name")
+      supabase.from("profiles").select("id, username, display_name")
         .not("id", "in", `(${excludeIds.join(",")})`)
         .limit(10),
     ]);
 
-    const balanceMap = new Map<string, number>(
-      (balanceData ?? []).map((p: any) => [p.id, p.balance])
-    );
+    // Fetch bet details for invites
+    let invitesList: Invite[] = [];
+    if (rawInvites && rawInvites.length > 0) {
+      const { data: betsData } = await supabase
+        .from("bets_summary")
+        .select("id, title, bet_type, creator_id, creator_username, creator_display_name")
+        .in("id", rawInvites.map((i: any) => i.bet_id));
+      invitesList = rawInvites.map((inv: any) => {
+        const bet = (betsData ?? []).find((b: any) => b.id === inv.bet_id);
+        return {
+          participant_id: inv.id,
+          bet_id: inv.bet_id,
+          amount: inv.amount,
+          bet_title: bet?.title ?? "Unknown Bet",
+          bet_type: bet?.bet_type ?? "",
+          creator_id: bet?.creator_id ?? "",
+          creator_username: bet?.creator_username ?? "",
+          creator_display_name: bet?.creator_display_name ?? null,
+        };
+      });
+    }
 
+    const balanceMap = new Map<string, number>((balanceData ?? []).map((p: any) => [p.id, p.balance]));
     setMe(myProfile ?? null);
-    setFriends(
-      (friendsData ?? []).map((f: any) => ({
-        ...f,
-        balance: balanceMap.get(f.friend_id) ?? 0,
-      }))
-    );
-    setIncoming(
-      (incomingData ?? []).map((r: any) => ({
-        id: r.id,
-        created_at: r.created_at,
-        profile: r.profiles,
-      }))
-    );
-    setSent(
-      (sentData ?? []).map((r: any) => ({
-        id: r.id,
-        created_at: r.created_at,
-        profile: r.profiles,
-      }))
-    );
+    setFriends((friendsData ?? []).map((f: any) => ({ ...f, balance: balanceMap.get(f.friend_id) ?? 0 })));
+    setIncoming((incomingData ?? []).map((r: any) => ({ id: r.id, created_at: r.created_at, profile: r.profiles })));
+    setSent((sentData ?? []).map((r: any) => ({ id: r.id, created_at: r.created_at, profile: r.profiles })));
     defaultSuggestions.current = suggestionsData ?? [];
     setSuggestions(suggestionsData ?? []);
+    setInvites(invitesList);
     setLoading(false);
   }
 
@@ -222,23 +199,37 @@ export function Friends() {
     const person = suggestions.find((p) => p.id === profileId);
     setPendingAdd((s) => new Set([...s, profileId]));
     setSuggestions((prev) => prev.filter((p) => p.id !== profileId));
-    const { data } = await supabase
-      .from("friendships")
+    const { data } = await supabase.from("friendships")
       .insert({ requester_id: me.id, addressee_id: profileId })
-      .select("id, created_at")
-      .single();
+      .select("id, created_at").single();
     if (data && person) {
-      setSent((prev) => [
-        ...prev,
-        { id: data.id, created_at: data.created_at, profile: { id: person.id, username: person.username, display_name: person.display_name } },
-      ]);
+      setSent((prev) => [...prev, { id: data.id, created_at: data.created_at, profile: { id: person.id, username: person.username, display_name: person.display_name } }]);
     }
+  }
+
+  async function acceptInvite(participantId: string) {
+    const outcome = outcomeSelections[participantId];
+    if (!outcome) return;
+    setProcessingInvite(participantId);
+    const { error } = await supabase.from("bet_participants")
+      .update({ status: "accepted", chosen_outcome: outcome })
+      .eq("id", participantId);
+    if (!error) setInvites((prev) => prev.filter((i) => i.participant_id !== participantId));
+    setProcessingInvite(null);
+  }
+
+  async function declineInvite(participantId: string) {
+    setProcessingInvite(participantId);
+    const { error } = await supabase.from("bet_participants")
+      .update({ status: "declined" })
+      .eq("id", participantId);
+    if (!error) setInvites((prev) => prev.filter((i) => i.participant_id !== participantId));
+    setProcessingInvite(null);
   }
 
   const leaderboard: LeaderboardEntry[] = me
     ? [...friends.map((f) => ({ ...f, isMe: false })), { friendship_id: "me", friend_id: me.id, username: me.username, display_name: me.display_name, balance: me.balance, isMe: true }]
-        .sort((a, b) => b.balance - a.balance)
-        .slice(0, 3)
+        .sort((a, b) => b.balance - a.balance).slice(0, 3)
     : [];
 
   const filteredSuggestions = suggestions.filter((p) => {
@@ -248,8 +239,103 @@ export function Friends() {
 
   if (loading) {
     return (
-      <div className="relative min-h-screen bg-background pb-24 flex items-center justify-center">
-        <p className="text-muted-foreground text-sm">Loading...</p>
+      <div className="relative h-full flex flex-col bg-background">
+        <div className="flex-1 flex items-center justify-center">
+          <p className="text-muted-foreground text-sm">Loading...</p>
+        </div>
+        <BottomNav active="friends" />
+      </div>
+    );
+  }
+
+  // Inbox panel
+  if (showInbox) {
+    return (
+      <div className="relative h-full flex flex-col bg-background">
+        <div className="flex-1 overflow-y-auto scrollbar-hide px-6 pt-8 pb-6 space-y-5">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowInbox(false)}
+              className="w-9 h-9 rounded-full border border-border flex items-center justify-center text-foreground"
+            >
+              ←
+            </button>
+            <h1 className="text-foreground text-2xl font-bold">Bet Invites</h1>
+          </div>
+
+          {invites.length === 0 ? (
+            <div className="flex flex-col items-center justify-center pt-20 gap-3">
+              <Bell size={32} className="text-muted-foreground" />
+              <p className="text-muted-foreground text-sm">No pending invites</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {invites.map((invite) => {
+                const options = getOutcomeOptions(invite.bet_type);
+                const selected = outcomeSelections[invite.participant_id];
+                const processing = processingInvite === invite.participant_id;
+                return (
+                  <div key={invite.participant_id} className="bg-card border border-border rounded-2xl p-5 space-y-4">
+                    {/* Creator */}
+                    <div className="flex items-center gap-2">
+                      <div className={`w-7 h-7 rounded-full ${AVATAR_COLORS[colorIndex(invite.creator_id)]} flex items-center justify-center text-white text-xs font-semibold`}>
+                        {getInitials(invite.creator_display_name, invite.creator_username)}
+                      </div>
+                      <p className="text-muted-foreground text-xs">
+                        {invite.creator_display_name ?? invite.creator_username} invited you
+                      </p>
+                    </div>
+
+                    {/* Bet title + wager */}
+                    <div>
+                      <p className="text-foreground font-semibold">{invite.bet_title}</p>
+                      <p className="text-primary text-sm font-medium mt-0.5">${invite.amount.toFixed(0)} wager</p>
+                    </div>
+
+                    {/* Outcome picker */}
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-2">Pick your side</p>
+                      <div className="flex gap-2">
+                        {options.map((opt) => (
+                          <button
+                            key={opt}
+                            onClick={() => setOutcomeSelections((prev) => ({ ...prev, [invite.participant_id]: opt }))}
+                            className={`flex-1 py-2 rounded-xl text-sm font-medium border transition-all ${
+                              selected === opt
+                                ? "bg-primary border-primary text-primary-foreground"
+                                : "border-border text-muted-foreground hover:border-primary/50"
+                            }`}
+                          >
+                            {opt}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Accept / Decline */}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => declineInvite(invite.participant_id)}
+                        disabled={processing}
+                        className="flex-1 py-2.5 rounded-xl border border-border text-muted-foreground text-sm font-medium disabled:opacity-40"
+                      >
+                        Decline
+                      </button>
+                      <button
+                        onClick={() => acceptInvite(invite.participant_id)}
+                        disabled={!selected || processing}
+                        className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium disabled:opacity-40"
+                      >
+                        {processing ? "..." : "Accept"}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        <BottomNav active="friends" />
       </div>
     );
   }
@@ -285,20 +371,16 @@ export function Friends() {
 
         {/* Tabs */}
         <div className="flex border-b border-border">
-          {(
-            [
-              { id: "friends", label: "Friends" },
-              { id: "requests", label: "Requests", badge: incoming.length },
-              { id: "find", label: "Find people" },
-            ] as { id: Tab; label: string; badge?: number }[]
-          ).map((tab) => (
+          {([
+            { id: "friends", label: "Friends" },
+            { id: "requests", label: "Requests", badge: incoming.length },
+            { id: "find", label: "Find people" },
+          ] as { id: Tab; label: string; badge?: number }[]).map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={`flex-1 py-3 text-sm font-medium flex items-center justify-center gap-1.5 border-b-2 transition-colors ${
-                activeTab === tab.id
-                  ? "border-foreground text-foreground"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
+                activeTab === tab.id ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
               }`}
             >
               {tab.label}
@@ -314,13 +396,9 @@ export function Friends() {
         {/* Friends Tab */}
         {activeTab === "friends" && (
           <div className="space-y-6 pt-1">
-
-            {/* Leaderboard */}
             {leaderboard.length > 0 && (
               <div>
-                <p className="text-xs font-semibold text-muted-foreground tracking-widest mb-4">
-                  LEADERBOARD
-                </p>
+                <p className="text-xs font-semibold text-muted-foreground tracking-widest mb-4">LEADERBOARD</p>
                 <div className="space-y-4">
                   {leaderboard.map((entry, i) => (
                     <div key={entry.friend_id} className="flex items-center gap-3">
@@ -340,11 +418,8 @@ export function Friends() {
               </div>
             )}
 
-            {/* Friends List */}
             <div>
-              <p className="text-xs font-semibold text-muted-foreground tracking-widest mb-2">
-                YOUR FRIENDS
-              </p>
+              <p className="text-xs font-semibold text-muted-foreground tracking-widest mb-2">YOUR FRIENDS</p>
               {friends.length === 0 ? (
                 <p className="text-muted-foreground text-sm py-4">No friends yet. Find people to add.</p>
               ) : (
@@ -358,14 +433,10 @@ export function Friends() {
                       <div key={friend.friend_id} className="py-4 flex items-center gap-3">
                         <Avatar id={friend.friend_id} displayName={friend.display_name} username={friend.username} />
                         <div className="flex-1 min-w-0">
-                          <p className="text-foreground font-medium leading-tight">
-                            {friend.display_name ?? friend.username}
-                          </p>
+                          <p className="text-foreground font-medium leading-tight">{friend.display_name ?? friend.username}</p>
                           <p className="text-muted-foreground text-xs mt-0.5">@{friend.username}</p>
                         </div>
-                        <span className="text-sm tabular-nums text-muted-foreground">
-                          ${friend.balance.toFixed(0)}
-                        </span>
+                        <span className="text-sm tabular-nums text-muted-foreground">${friend.balance.toFixed(0)}</span>
                       </div>
                     ))}
                 </div>
@@ -389,23 +460,13 @@ export function Friends() {
                     <div key={req.id} className="flex gap-3 py-1">
                       <Avatar id={req.profile.id} displayName={req.profile.display_name} username={req.profile.username} />
                       <div className="flex-1 min-w-0">
-                        <p className="text-foreground font-medium leading-tight">
-                          {req.profile.display_name ?? req.profile.username}
-                        </p>
-                        <p className="text-muted-foreground text-xs mt-0.5">
-                          @{req.profile.username} · {timeAgo(req.created_at)}
-                        </p>
+                        <p className="text-foreground font-medium leading-tight">{req.profile.display_name ?? req.profile.username}</p>
+                        <p className="text-muted-foreground text-xs mt-0.5">@{req.profile.username} · {timeAgo(req.created_at)}</p>
                         <div className="flex gap-2 mt-2.5">
-                          <button
-                            onClick={() => acceptRequest(req.id)}
-                            className="px-4 py-1.5 rounded-lg bg-foreground text-background text-sm font-medium hover:opacity-90 transition-opacity"
-                          >
+                          <button onClick={() => acceptRequest(req.id)} className="px-4 py-1.5 rounded-lg bg-foreground text-background text-sm font-medium hover:opacity-90 transition-opacity">
                             Accept
                           </button>
-                          <button
-                            onClick={() => declineRequest(req.id)}
-                            className="px-4 py-1.5 rounded-lg text-muted-foreground text-sm hover:text-foreground transition-colors"
-                          >
+                          <button onClick={() => declineRequest(req.id)} className="px-4 py-1.5 rounded-lg text-muted-foreground text-sm hover:text-foreground transition-colors">
                             Decline
                           </button>
                         </div>
@@ -418,20 +479,14 @@ export function Friends() {
 
             {sent.length > 0 && (
               <div>
-                <p className="text-xs font-semibold text-muted-foreground tracking-widest mb-3">
-                  SENT
-                </p>
+                <p className="text-xs font-semibold text-muted-foreground tracking-widest mb-3">SENT</p>
                 <div className="space-y-3">
                   {sent.map((req) => (
                     <div key={req.id} className="flex items-center gap-3 py-1">
                       <Avatar id={req.profile.id} displayName={req.profile.display_name} username={req.profile.username} />
                       <div>
-                        <p className="text-foreground font-medium leading-tight">
-                          {req.profile.display_name ?? req.profile.username}
-                        </p>
-                        <p className="text-muted-foreground text-xs mt-0.5">
-                          @{req.profile.username} · pending · {timeAgo(req.created_at)}
-                        </p>
+                        <p className="text-foreground font-medium leading-tight">{req.profile.display_name ?? req.profile.username}</p>
+                        <p className="text-muted-foreground text-xs mt-0.5">@{req.profile.username} · pending · {timeAgo(req.created_at)}</p>
                       </div>
                     </div>
                   ))}
@@ -444,9 +499,7 @@ export function Friends() {
         {/* Find People Tab */}
         {activeTab === "find" && (
           <div className="pt-1">
-            <p className="text-xs font-semibold text-muted-foreground tracking-widest mb-3">
-              SUGGESTED
-            </p>
+            <p className="text-xs font-semibold text-muted-foreground tracking-widest mb-3">SUGGESTED</p>
             {searchLoading ? (
               <p className="text-muted-foreground text-sm">Searching...</p>
             ) : filteredSuggestions.length === 0 ? (
@@ -457,19 +510,13 @@ export function Friends() {
                   <div key={person.id} className="py-4 flex items-center gap-3">
                     <Avatar id={person.id} displayName={person.display_name} username={person.username} />
                     <div className="flex-1 min-w-0">
-                      <p className="text-foreground font-medium leading-tight">
-                        {person.display_name ?? person.username}
-                      </p>
+                      <p className="text-foreground font-medium leading-tight">{person.display_name ?? person.username}</p>
                       <p className="text-muted-foreground text-xs mt-0.5">@{person.username}</p>
                     </div>
                     <button
                       onClick={() => sendRequest(person.id)}
                       disabled={pendingAdd.has(person.id)}
-                      className={`text-sm font-medium transition-colors ${
-                        pendingAdd.has(person.id)
-                          ? "text-muted-foreground cursor-default"
-                          : "text-primary hover:opacity-70"
-                      }`}
+                      className={`text-sm font-medium transition-colors ${pendingAdd.has(person.id) ? "text-muted-foreground cursor-default" : "text-primary hover:opacity-70"}`}
                     >
                       {pendingAdd.has(person.id) ? "Sent" : "Add"}
                     </button>
