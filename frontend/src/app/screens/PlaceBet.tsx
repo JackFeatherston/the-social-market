@@ -339,7 +339,14 @@ export function PlaceBet() {
                 <input
                   type="number"
                   value={wager}
-                  onChange={(e) => setWager(e.target.value)}
+                  onChange={(e) => {
+                    const value = e.target.value;
+
+                    // Allow only numbers with up to 2 decimal places
+                    if (/^\d*\.?\d{0,2}$/.test(value)) {
+                      setWager(value);
+                    }
+                  }}
                   placeholder="0"
                   className="w-full pl-8 pr-4 py-4 rounded-xl bg-input-background border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 text-lg"
                 />

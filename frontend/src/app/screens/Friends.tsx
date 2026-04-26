@@ -399,7 +399,16 @@ export function Friends() {
                         <input
                           type="number"
                           value={wagerSelections[pid] ?? ""}
-                          onChange={(e) => setWagerSelections((prev) => ({ ...prev, [pid]: e.target.value }))}
+                          onChange={(e) => {
+                            const value = e.target.value;
+
+                            if (/^\d*\.?\d{0,2}$/.test(value)) {
+                              setWagerSelections((prev) => ({
+                                ...prev,
+                                [pid]: value,
+                              }));
+                            }
+                          }}
                           placeholder={invite.amount.toFixed(0)}
                           className="flex-1 bg-transparent text-foreground text-sm font-semibold outline-none placeholder:text-muted-foreground"
                         />

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, UserPlus, Check, Search, X } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { BottomNav } from "../components/BottomNav";
 
@@ -25,11 +25,8 @@ function getInitials(displayName: string | null, username: string): string {
 }
 
 const STATUS_LABELS: Record<string, string> = {
-  pending: "Pending",
-  active: "Active",
-  resolving: "Resolving",
-  settled: "Settled",
-  cancelled: "Cancelled",
+  pending: "Pending", active: "Active", resolving: "Resolving",
+  settled: "Settled", cancelled: "Cancelled",
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -41,35 +38,36 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 type Bet = {
-  id: string;
-  title: string;
-  bet_type: string;
-  status: string;
-  total_pot: number;
-  participant_count: number;
-  creator_id: string;
-  creator_username: string;
-  creator_display_name: string | null;
-  expires_at: string | null;
+  id: string; title: string; bet_type: string; status: string;
+  total_pot: number; participant_count: number; creator_id: string;
+  creator_username: string; creator_display_name: string | null; expires_at: string | null;
 };
 
 type Participant = {
-  id: string;
-  user_id: string;
-  chosen_outcome: string | null;
-  amount: number;
-  status: string;
+  id: string; user_id: string; chosen_outcome: string | null;
+  amount: number; status: string;
   profiles: { username: string; display_name: string | null } | null;
 };
+
+type Friend = { friend_id: string; username: string; display_name: string | null };
 
 export function BetDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+
   const [bet, setBet] = useState<Bet | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [allParticipantIds, setAllParticipantIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Add people state
+  const [showAddPeople, setShowAddPeople] = useState(false);
+  const [friendsList, setFriendsList] = useState<Friend[]>([]);
+  const [friendSearch, setFriendSearch] = useState("");
+  const [selectedNewFriends, setSelectedNewFriends] = useState<string[]>([]);
+  const [adding, setAdding] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -77,27 +75,64 @@ export function BetDetail() {
       const { data: { user } } = await supabase.auth.getUser();
       setCurrentUserId(user?.id ?? null);
 
-      const [{ data: betData, error: betError }, { data: participantsData }] = await Promise.all([
-        supabase
-          .from("bets_summary")
+      const [
+        { data: betData, error: betError },
+        { data: acceptedData },
+        { data: allParticipantsData },
+      ] = await Promise.all([
+        supabase.from("bets_summary")
           .select("id, title, bet_type, status, total_pot, participant_count, creator_id, creator_username, creator_display_name, expires_at")
-          .eq("id", id)
-          .single(),
-        supabase
-          .from("bet_participants")
+          .eq("id", id).single(),
+        supabase.from("bet_participants")
           .select("id, user_id, chosen_outcome, amount, status, profiles(username, display_name)")
-          .eq("bet_id", id)
-          .eq("status", "accepted"),
+          .eq("bet_id", id).eq("status", "accepted"),
+        supabase.from("bet_participants")
+          .select("user_id").eq("bet_id", id),
       ]);
 
       if (betError) { setError(betError.message); setLoading(false); return; }
-
       setBet(betData ?? null);
-      setParticipants((participantsData ?? []) as unknown as Participant[]);
+      setParticipants((acceptedData ?? []) as unknown as Participant[]);
+      setAllParticipantIds((allParticipantsData ?? []).map((p: any) => p.user_id));
       setLoading(false);
     }
     fetchData();
   }, [id]);
+
+  useEffect(() => {
+    if (!showAddPeople) return;
+    async function loadFriends() {
+      const { data } = await supabase
+        .from("friends_with_profiles")
+        .select("friend_id, username, display_name");
+      setFriendsList((data ?? []).filter((f: any) => !allParticipantIds.includes(f.friend_id)));
+    }
+    loadFriends();
+  }, [showAddPeople, allParticipantIds]);
+
+  async function addPeople() {
+    if (!bet || selectedNewFriends.length === 0) return;
+    setAdding(true);
+    const wagerAmount = participants[0]?.amount ?? 10;
+    const rows = selectedNewFriends.map((friendId) => ({
+      bet_id: bet.id,
+      user_id: friendId,
+      status: "invited",
+      chosen_outcome: null,
+      amount: wagerAmount,
+    }));
+    await supabase.from("bet_participants").insert(rows);
+    setAllParticipantIds((prev) => [...prev, ...selectedNewFriends]);
+    setSelectedNewFriends([]);
+    setFriendSearch("");
+    setShowAddPeople(false);
+    setAdding(false);
+  }
+
+  const filteredFriends = friendsList.filter((f) => {
+    const q = friendSearch.toLowerCase();
+    return !q || f.username.toLowerCase().includes(q) || (f.display_name ?? "").toLowerCase().includes(q);
+  });
 
   const outcomeGroups = participants.reduce<Record<string, { amount: number; count: number }>>((acc, p) => {
     const key = p.chosen_outcome ?? "Unknown";
@@ -108,7 +143,6 @@ export function BetDetail() {
   }, {});
 
   const totalAccepted = Object.values(outcomeGroups).reduce((s, g) => s + g.amount, 0);
-
   const OUTCOME_COLORS = ["bg-primary", "bg-destructive", "bg-amber-500", "bg-emerald-500"];
 
   if (loading) {
@@ -161,9 +195,7 @@ export function BetDetail() {
             </div>
             <div>
               <p className="text-muted-foreground text-xs">Created by</p>
-              <p className="text-foreground text-sm font-medium">
-                {bet.creator_display_name ?? bet.creator_username}
-              </p>
+              <p className="text-foreground text-sm font-medium">{bet.creator_display_name ?? bet.creator_username}</p>
             </div>
           </div>
 
@@ -177,9 +209,7 @@ export function BetDetail() {
             {bet.expires_at && (
               <div className="text-right">
                 <p className="text-muted-foreground text-xs mb-0.5">Closes</p>
-                <p className="text-foreground text-sm">
-                  {new Date(bet.expires_at).toLocaleDateString()}
-                </p>
+                <p className="text-foreground text-sm">{new Date(bet.expires_at).toLocaleDateString()}</p>
               </div>
             )}
           </div>
@@ -199,10 +229,7 @@ export function BetDetail() {
                       <span className="text-muted-foreground">${group.amount.toFixed(0)}</span>
                     </div>
                     <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
-                      <div
-                        className={`h-full ${OUTCOME_COLORS[i % OUTCOME_COLORS.length]} rounded-full transition-all`}
-                        style={{ width: `${pct}%` }}
-                      />
+                      <div className={`h-full ${OUTCOME_COLORS[i % OUTCOME_COLORS.length]} rounded-full transition-all`} style={{ width: `${pct}%` }} />
                     </div>
                   </div>
                 );
@@ -213,9 +240,99 @@ export function BetDetail() {
 
         {/* Participants */}
         <div className="space-y-3">
-          <p className="text-xs font-semibold text-muted-foreground tracking-widest">
-            PARTICIPANTS ({participants.length})
-          </p>
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold text-muted-foreground tracking-widest">
+              PARTICIPANTS ({participants.length})
+            </p>
+            {isCreator && bet.status !== "settled" && bet.status !== "cancelled" && (
+              <button
+                onClick={() => setShowAddPeople((v) => !v)}
+                className="flex items-center gap-1 text-xs text-primary font-semibold"
+              >
+                <UserPlus size={13} />
+                Add people
+              </button>
+            )}
+          </div>
+
+          {/* Add people panel */}
+          {showAddPeople && (
+            <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Search size={14} />
+                <input
+                  value={friendSearch}
+                  onChange={(e) => setFriendSearch(e.target.value)}
+                  placeholder="Search friends..."
+                  className="flex-1 bg-transparent text-foreground placeholder:text-muted-foreground text-sm outline-none"
+                />
+              </div>
+              <div className="h-px bg-border" />
+
+              {filteredFriends.length === 0 ? (
+                <p className="text-muted-foreground text-sm py-1">
+                  {friendsList.length === 0 ? "All your friends are already in this bet." : "No matches."}
+                </p>
+              ) : (
+                <div className="space-y-1 max-h-48 overflow-y-auto scrollbar-hide">
+                  {filteredFriends.map((f) => {
+                    const selected = selectedNewFriends.includes(f.friend_id);
+                    return (
+                      <button
+                        key={f.friend_id}
+                        onClick={() => setSelectedNewFriends((prev) =>
+                          prev.includes(f.friend_id) ? prev.filter((x) => x !== f.friend_id) : [...prev, f.friend_id]
+                        )}
+                        className={`w-full flex items-center gap-3 px-2 py-2 rounded-xl transition-colors ${selected ? "bg-primary/10" : "hover:bg-white/5"}`}
+                      >
+                        <div className={`w-8 h-8 rounded-full ${AVATAR_COLORS[colorIndex(f.friend_id)]} flex items-center justify-center text-xs font-semibold text-white flex-shrink-0`}>
+                          {getInitials(f.display_name, f.username)}
+                        </div>
+                        <div className="flex-1 text-left">
+                          <p className="text-sm text-foreground font-medium leading-tight">{f.display_name ?? f.username}</p>
+                          <p className="text-xs text-muted-foreground">@{f.username}</p>
+                        </div>
+                        {selected && <Check size={14} className="text-primary" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {selectedNewFriends.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {selectedNewFriends.map((fid) => {
+                    const f = friendsList.find((x) => x.friend_id === fid);
+                    return (
+                      <span key={fid} className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary/20 border border-primary/30 text-primary text-xs font-medium">
+                        {f?.display_name ?? f?.username}
+                        <button onClick={() => setSelectedNewFriends((prev) => prev.filter((x) => x !== fid))}>
+                          <X size={10} />
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={() => { setShowAddPeople(false); setSelectedNewFriends([]); setFriendSearch(""); }}
+                  className="flex-1 py-2 rounded-xl border border-border text-muted-foreground text-sm font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={addPeople}
+                  disabled={selectedNewFriends.length === 0 || adding}
+                  className="flex-1 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-medium disabled:opacity-40"
+                >
+                  {adding ? "Inviting..." : `Invite ${selectedNewFriends.length > 0 ? `(${selectedNewFriends.length})` : ""}`}
+                </button>
+              </div>
+            </div>
+          )}
+
           {participants.length === 0 ? (
             <p className="text-muted-foreground text-sm">No accepted participants yet.</p>
           ) : (
