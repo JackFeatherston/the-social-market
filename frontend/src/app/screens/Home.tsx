@@ -5,6 +5,7 @@ import { Wallet } from "lucide-react";
 import { BottomNav } from "../components/BottomNav";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../../lib/supabase";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
 interface Profile {
   first_name: string | null;
@@ -26,6 +27,11 @@ interface ActivityItem {
   amount: number | null;
   user_id: string;
   bets: { title: string } | null;
+}
+
+interface BalancePoint {
+  date: string;
+  amount: number;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -72,6 +78,7 @@ export function Home() {
   const [activeBets, setActiveBets] = useState<ActiveBet[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [usernameMap, setUsernameMap] = useState<Record<string, string>>({});
+  const [balanceData, setBalanceData] = useState<BalancePoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [inviteCount, setInviteCount] = useState(0);
 
@@ -85,7 +92,7 @@ export function Home() {
 
       const myBetIds = (myBets ?? []).map((b) => b.bet_id);
 
-      const [profileRes, betsRes, activityRes, invitesRes] = await Promise.all([
+      const [profileRes, betsRes, activityRes, invitesRes, balanceRes] = await Promise.all([
         supabase
           .from("profiles")
           .select("first_name, username, balance")
@@ -107,6 +114,12 @@ export function Home() {
           .select("id", { count: "exact", head: true })
           .eq("user_id", user?.id ?? "")
           .eq("status", "invited"),
+        supabase
+          .from("balance_history")
+          .select("date, amount")
+          .eq("user_id", user?.id ?? "")
+          .order("created_at", { ascending: true })
+          .limit(6),
       ]);
 
       const activityData = (activityRes.data ?? []) as unknown as ActivityItem[];
@@ -127,10 +140,15 @@ export function Home() {
       setActivity(activityData);
       setUsernameMap(map);
       setInviteCount(invitesRes.count ?? 0);
+      setBalanceData((balanceRes.data ?? []) as BalancePoint[]);
       setLoading(false);
     }
     fetchData();
   }, [user]);
+
+  const balancePct = balanceData.length >= 2
+    ? Math.round(((balanceData[balanceData.length - 1].amount - balanceData[0].amount) / balanceData[0].amount) * 100)
+    : null;
 
   return (
     <div className="relative h-full flex flex-col bg-background">
@@ -158,6 +176,65 @@ export function Home() {
                   {profile ? formatCurrency(profile.balance) : "..."}
                 </span>
               </div>
+            </div>
+          </div>
+
+          <div className="glass rounded-3xl p-5 space-y-3 shadow-sm">
+            <div className="flex items-center justify-between">
+              <h3 className="text-[#F9FAFB] font-heading">Balance History</h3>
+              {balancePct !== null && (
+                <span className={`text-small ${balancePct >= 0 ? "text-success" : "text-destructive"}`}>
+                  {balancePct >= 0 ? "+" : ""}{balancePct}%
+                </span>
+              )}
+            </div>
+            <div className="w-full h-[180px] min-h-[180px]">
+              <ResponsiveContainer width="100%" height={180}>
+                <LineChart data={balanceData} margin={{ top: 15, right: 10, bottom: 5, left: -20 }}>
+                  <XAxis
+                    dataKey="date"
+                    stroke="currentColor"
+                    className="text-muted-foreground"
+                    tick={{ fill: "currentColor" }}
+                    tickLine={false}
+                    axisLine={false}
+                    style={{ fontSize: "12px" }}
+                    key="xaxis"
+                  />
+                  <YAxis
+                    stroke="currentColor"
+                    className="text-muted-foreground"
+                    tick={{ fill: "currentColor" }}
+                    tickLine={false}
+                    axisLine={false}
+                    style={{ fontSize: "12px" }}
+                    tickFormatter={(value) => `$${value}`}
+                    key="yaxis"
+                  />
+                  <Tooltip
+                    contentStyle={{
+                    backgroundColor: "rgba(0, 0, 0, 0.4)",
+                    backdropFilter: "blur(8px)",
+                    border: "1px solid rgba(255, 255, 255, 0.1)",
+                    borderRadius: "12px",
+                    padding: "8px 12px",
+                  }}
+                    labelStyle={{ color: "var(--foreground)" }}
+                    itemStyle={{ color: "var(--primary)" }}
+                    formatter={(value: number) => [`$${value}`, "Balance"]}
+                    key="tooltip"
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="amount"
+                    stroke="var(--primary)"
+                    strokeWidth={3}
+                    dot={{ fill: "var(--primary)", strokeWidth: 2, r: 4 }}
+                    activeDot={{ r: 6 }}
+                    key="line-amount"
+                  />
+                </LineChart>
+              </ResponsiveContainer>
             </div>
           </div>
 
