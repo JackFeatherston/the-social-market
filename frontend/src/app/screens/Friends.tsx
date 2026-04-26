@@ -59,6 +59,7 @@ type Invite = {
   creator_id: string;
   creator_username: string;
   creator_display_name: string | null;
+  threshold: number | null;
 };
 
 const RANK_LABELS = ["1", "2", "3"];
@@ -79,7 +80,6 @@ export function Friends() {
   const [invites, setInvites] = useState<Invite[]>([]);
   const showInbox = !!(location.state as any)?.openInbox;
   const [outcomeSelections, setOutcomeSelections] = useState<Record<string, string>>({});
-  const [thresholdSelections, setThresholdSelections] = useState<Record<string, string>>({});
   const [directionSelections, setDirectionSelections] = useState<Record<string, string>>({});
   const [howManySelections, setHowManySelections] = useState<Record<string, number>>({});
   const [wagerSelections, setWagerSelections] = useState<Record<string, string>>({});
@@ -150,12 +150,20 @@ export function Friends() {
     // Fetch bet details for invites
     let invitesList: Invite[] = [];
     if (rawInvites && rawInvites.length > 0) {
-      const { data: betsData } = await supabase
-        .from("bets_summary")
-        .select("id, title, bet_type, creator_id, creator_username, creator_display_name")
-        .in("id", rawInvites.map((i: any) => i.bet_id));
+      const betIds = rawInvites.map((i: any) => i.bet_id);
+      const [{ data: betsData }, { data: thresholdsData }] = await Promise.all([
+        supabase
+          .from("bets_summary")
+          .select("id, title, bet_type, creator_id, creator_username, creator_display_name")
+          .in("id", betIds),
+        supabase
+          .from("bets")
+          .select("id, threshold")
+          .in("id", betIds),
+      ]);
       invitesList = rawInvites.map((inv: any) => {
         const bet = (betsData ?? []).find((b: any) => b.id === inv.bet_id);
+        const thresholdRow = (thresholdsData ?? []).find((t: any) => t.id === inv.bet_id);
         return {
           participant_id: inv.id,
           bet_id: inv.bet_id,
@@ -165,6 +173,7 @@ export function Friends() {
           creator_id: bet?.creator_id ?? "",
           creator_username: bet?.creator_username ?? "",
           creator_display_name: bet?.creator_display_name ?? null,
+          threshold: thresholdRow?.threshold ?? null,
         };
       });
     }
@@ -209,8 +218,7 @@ export function Friends() {
     if (invite.bet_type === "happens-or-not") return outcomeSelections[pid] || null;
     if (invite.bet_type === "above-below") {
       const dir = directionSelections[pid];
-      const val = thresholdSelections[pid];
-      return dir && val ? `${dir} ${val}` : null;
+      return dir && invite.threshold != null ? `${dir} ${invite.threshold}` : null;
     }
     if (invite.bet_type === "how-many") return String(howManySelections[pid] ?? 5);
     return null;
@@ -219,7 +227,7 @@ export function Friends() {
   function isPickValid(invite: Invite): boolean {
     const pid = invite.participant_id;
     if (invite.bet_type === "happens-or-not") return !!outcomeSelections[pid];
-    if (invite.bet_type === "above-below") return !!directionSelections[pid] && !!thresholdSelections[pid];
+    if (invite.bet_type === "above-below") return !!directionSelections[pid];
     if (invite.bet_type === "how-many") return true;
     return false;
   }
@@ -338,17 +346,11 @@ export function Friends() {
                     {invite.bet_type === "above-below" && (
                       <div className="space-y-3">
                         <div className="space-y-1">
-                          <p className="text-xs text-muted-foreground">Threshold value</p>
-                          <input
-                            type="number"
-                            value={thresholdSelections[pid] ?? ""}
-                            onChange={(e) => setThresholdSelections((prev) => ({ ...prev, [pid]: e.target.value }))}
-                            placeholder="e.g. 100"
-                            className="w-full bg-transparent text-foreground text-xl font-bold outline-none placeholder:text-muted-foreground"
-                          />
+                          <p className="text-xs text-muted-foreground">Threshold</p>
+                          <p className="text-foreground text-xl font-bold">{invite.threshold ?? "—"}</p>
                         </div>
                         <div className="space-y-1">
-                          <p className="text-xs text-muted-foreground">Direction</p>
+                          <p className="text-xs text-muted-foreground">Your pick</p>
                           <div className="flex gap-2">
                             {(["Above", "Below"] as const).map((opt) => (
                               <button
@@ -365,8 +367,8 @@ export function Friends() {
                             ))}
                           </div>
                         </div>
-                        {directionSelections[pid] && thresholdSelections[pid] && (
-                          <p className="text-primary text-sm font-semibold">→ {directionSelections[pid]} {thresholdSelections[pid]}</p>
+                        {directionSelections[pid] && invite.threshold != null && (
+                          <p className="text-primary text-sm font-semibold">→ {directionSelections[pid]} {invite.threshold}</p>
                         )}
                       </div>
                     )}
@@ -442,7 +444,7 @@ export function Friends() {
                     {!pickValid && (me === null || finalWager <= Number(me.balance)) && (
                       <p className="text-muted-foreground text-xs text-center">
                         {invite.bet_type === "above-below"
-                          ? "Enter a threshold and pick a direction above."
+                          ? "Pick Above or Below to continue."
                           : invite.bet_type === "happens-or-not"
                           ? "Pick Yes or No above to continue."
                           : "Complete your pick above to accept."}
