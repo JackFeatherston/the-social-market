@@ -378,6 +378,9 @@ export function BetDetail() {
           setSettling(false);
           return;
         }
+
+        navigate("/home");
+        return;
       }
     }
 
@@ -523,10 +526,10 @@ export function BetDetail() {
 
     if (error) {
       setFinalizeError(error.message);
+      setFinalizing(false);
     } else {
-      await fetchData();
+      navigate("/home");
     }
-    setFinalizing(false);
   }
 
   if (loading) {
