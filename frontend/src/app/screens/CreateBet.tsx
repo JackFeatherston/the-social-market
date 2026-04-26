@@ -189,6 +189,7 @@ export function CreateBet() {
       creator_id: user.id,
       status: "pending",
       settlement_method: settlementMethod,
+      ...(betType === "above-below" && threshold ? { threshold: parseFloat(threshold) } : {}),
       ...(settlementMethod === 'location' && {
         location_mode:            locationMode || null,
         location_result_type:     locationResultType || null,
