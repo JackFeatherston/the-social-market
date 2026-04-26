@@ -28,6 +28,32 @@ interface ActivityItem {
   bets: { title: string } | null;
 }
 
+const AVATAR_COLORS = [
+  "bg-teal-500",
+  "bg-rose-400",
+  "bg-violet-500",
+  "bg-pink-400",
+  "bg-indigo-400",
+  "bg-amber-500",
+  "bg-emerald-500",
+  "bg-sky-500",
+];
+
+function getInitials(displayName: string | null, username: string): string {
+  if (displayName) {
+    const parts = displayName.trim().split(/\s+/);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return displayName.slice(0, 2).toUpperCase();
+  }
+  return username.slice(0, 2).toUpperCase();
+}
+
+function colorIndex(id: string): number {
+  let hash = 0;
+  for (const c of id) hash = (hash * 31 + c.charCodeAt(0)) & 0xffff;
+  return hash % AVATAR_COLORS.length;
+}
+
 const STATUS_COLORS: Record<string, string> = {
   active: "bg-primary",
   pending: "bg-muted",
@@ -72,6 +98,7 @@ export function Home() {
   const [activeBets, setActiveBets] = useState<ActiveBet[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [usernameMap, setUsernameMap] = useState<Record<string, string>>({});
+  const [displayNameMap, setDisplayNameMap] = useState<Record<string, string | null>>({});
   const [loading, setLoading] = useState(true);
   const [inviteCount, setInviteCount] = useState(0);
 
@@ -114,18 +141,21 @@ export function Home() {
       const userIds = [...new Set(activityData.map((a) => a.user_id))];
       const profilesRes = await supabase
         .from("profiles")
-        .select("id, username")
+        .select("id, username, display_name")
         .in("id", userIds.length > 0 ? userIds : [""]);
 
       const map: Record<string, string> = {};
-      (profilesRes.data ?? []).forEach((p: { id: string; username: string }) => {
+      const dnMap: Record<string, string | null> = {};
+      (profilesRes.data ?? []).forEach((p: { id: string; username: string; display_name: string | null }) => {
         map[p.id] = p.username;
+        dnMap[p.id] = p.display_name;
       });
 
       setProfile(profileRes.data ?? null);
       setActiveBets((betsRes.data ?? []) as ActiveBet[]);
       setActivity(activityData);
       setUsernameMap(map);
+      setDisplayNameMap(dnMap);
       setInviteCount(invitesRes.count ?? 0);
       setLoading(false);
     }
@@ -138,7 +168,7 @@ export function Home() {
         <div className="overflow-y-auto scrollbar-hide h-full px-6 pt-8 pb-6 space-y-6">
           <div className="flex items-center justify-between">
             <h2 className="text-foreground">
-              Hey, {profile?.first_name ?? profile?.username ?? "..."}
+              Hey, {profile?.first_name ?? profile?.username ?? "..."}!
             </h2>
             <div className="flex items-center gap-2">
               <button
@@ -235,12 +265,22 @@ export function Home() {
                     profile?.first_name ?? profile?.username ?? "You",
                     usernameMap
                   );
+                  const dn = item.user_id === user?.id
+                    ? null
+                    : (displayNameMap[item.user_id] ?? null);
+                  const un = item.user_id === user?.id
+                    ? (profile?.username ?? "")
+                    : (usernameMap[item.user_id] ?? "");
+                  const initials = getInitials(dn, un);
+                  const avatarColor = AVATAR_COLORS[colorIndex(item.user_id)];
                   return (
                     <div
                       key={item.id}
                       className="bg-card rounded-2xl p-4 border border-border flex items-center gap-4"
                     >
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/30 flex-shrink-0" />
+                      <div className={`w-10 h-10 rounded-full ${avatarColor} flex items-center justify-center flex-shrink-0`}>
+                        <span className="text-white text-sm font-semibold">{initials}</span>
+                      </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-foreground text-sm font-medium">{username}</p>
                         <p className="text-muted-foreground text-sm">
