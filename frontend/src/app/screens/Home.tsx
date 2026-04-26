@@ -24,8 +24,9 @@ interface ActivityItem {
   id: string;
   activity_type: string;
   amount: number | null;
+  user_id: string;
   bets: { title: string } | null;
-  //profiles: { username: string } | null;
+  profiles: { username: string } | null;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -40,12 +41,15 @@ function formatCurrency(n: number) {
   return "$" + n.toFixed(0);
 }
 
-function formatActivity(item: ActivityItem, username: string): {
+function formatActivity(item: ActivityItem, myUserId: string, myUsername: string): {
   action: string;
   bet: string;
   amount: string | null;
 } {
   const title = item.bets?.title ?? "a bet";
+  const username = item.user_id === myUserId
+    ? myUsername
+    : (item.profiles?.username ?? "Someone");
   const amt = item.amount != null ? formatCurrency(item.amount) : null;
   switch (item.activity_type) {
     case "bet_won":
@@ -73,6 +77,13 @@ export function Home() {
   useEffect(() => {
     if (!user) return;
     async function fetchData() {
+      const { data: myBets } = await supabase
+        .from("bet_participants")
+        .select("bet_id")
+        .eq("user_id", user?.id ?? "");
+
+        const myBetIds = (myBets ?? []).map((b) => b.bet_id);
+
       const [profileRes, betsRes, activityRes, invitesRes] = await Promise.all([
         supabase
           .from("profiles")
@@ -86,16 +97,20 @@ export function Home() {
           .order("created_at", { ascending: false }),
         supabase
           .from("activity_feed")
-          .select("id, activity_type, amount, bets(title)")
-          .eq("user_id", user?.id ?? "")
+          .select("id, activity_type, amount, user_id, bets(title), profiles!user_id(username)")
+          .in("bet_id", myBetIds.length > 0 ? myBetIds : [""])
           .order("created_at", { ascending: false })
-          .limit(10),
+          .limit(20),
         supabase
           .from("bet_participants")
           .select("id", { count: "exact", head: true })
           .eq("user_id", user?.id ?? "")
           .eq("status", "invited"),
       ]);
+      console.log("myBetIds:", myBetIds);
+      console.log("activityRes data:", activityRes.data);
+      console.log("activityRes error:", activityRes.error);
+
       setProfile(profileRes.data ?? null);
       setActiveBets((betsRes.data ?? []) as ActiveBet[]);
       setActivity((activityRes.data ?? []) as unknown as ActivityItem[]);
@@ -203,7 +218,7 @@ export function Home() {
           ) : (
             <div className="space-y-3">
               {activity.map((item) => {
-                const { action, bet, amount } = formatActivity(item, profile?.first_name ?? "You");
+                const { action, bet, amount } = formatActivity(item, user?.id ?? "", profile?.first_name ?? "You");
                 return (
                   <div
                     key={item.id}
