@@ -57,6 +57,8 @@ export function CreateBet() {
   const [launchError, setLaunchError] = useState<string | null>(null);
   const [userBalance, setUserBalance] = useState<number | null>(null);
 
+  const pickIsValid = betSelection.trim().length > 0;
+
   useEffect(() => {
     async function loadFriends() {
       const { data } = await supabase
@@ -366,7 +368,7 @@ export function CreateBet() {
               </button>
               <button
                 onClick={() => setStep(4)}
-                disabled={!betType || !wager || (userBalance !== null && parseFloat(wager) > userBalance)}
+                disabled={!betType || !pickIsValid || !wager || (userBalance !== null && parseFloat(wager) > userBalance)}
                 className="flex-1 py-3.5 rounded-2xl bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-40"
               >
                 Next
