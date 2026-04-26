@@ -40,9 +40,65 @@ export function Profile() {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<Profile | null>(null);
 
+  const [newUsername, setNewUsername] = useState("");
+  const [usernameMsg, setUsernameMsg] = useState<string | null>(null);
+  const [usernameError, setUsernameError] = useState(false);
+  const [savingUsername, setSavingUsername] = useState(false);
+
+  const [newPassword, setNewPassword] = useState("");
+  const [passwordMsg, setPasswordMsg] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState(false);
+  const [savingPassword, setSavingPassword] = useState(false);
+
   async function handleSignOut() {
     await supabase.auth.signOut();
     navigate("/");
+  }
+
+  async function handleChangeUsername() {
+    if (!newUsername.trim() || !profile) return;
+    setSavingUsername(true);
+    setUsernameMsg(null);
+    const { error } = await supabase
+      .from("profiles")
+      .update({ username: newUsername.trim() })
+      .eq("id", profile.id);
+    if (error) {
+      const msg = error.message.toLowerCase();
+      setUsernameError(true);
+      if (msg.includes("unique") || msg.includes("duplicate") || error.code === "23505") {
+        setUsernameMsg("Username already taken. Please choose another.");
+      } else {
+        setUsernameMsg("Something went wrong. Please try again.");
+      }
+    } else {
+      setUsernameError(false);
+      setProfile({ ...profile, username: newUsername.trim() });
+      setNewUsername("");
+      setUsernameMsg("Username updated.");
+    }
+    setSavingUsername(false);
+  }
+
+  async function handleChangePassword() {
+    if (!newPassword) return;
+    setSavingPassword(true);
+    setPasswordMsg(null);
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) {
+      const msg = error.message.toLowerCase();
+      setPasswordError(true);
+      if (msg.includes("least") || msg.includes("characters") || msg.includes("short")) {
+        setPasswordMsg("Password must be at least 6 characters.");
+      } else {
+        setPasswordMsg("Something went wrong. Please try again.");
+      }
+    } else {
+      setPasswordError(false);
+      setNewPassword("");
+      setPasswordMsg("Password updated.");
+    }
+    setSavingPassword(false);
   }
 
   useEffect(() => {
@@ -102,6 +158,54 @@ export function Profile() {
               @{profile?.username ?? ""}
             </p>
           </div>
+        </div>
+
+        {/* Change username */}
+        <div className="pt-4 space-y-2">
+          <p className="text-foreground text-sm font-semibold">Change Username</p>
+          <input
+            type="text"
+            value={newUsername}
+            onChange={(e) => setNewUsername(e.target.value)}
+            placeholder={profile?.username ?? "New username"}
+            className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:ring-1 focus:ring-primary"
+          />
+          <button
+            onClick={handleChangeUsername}
+            disabled={savingUsername || !newUsername.trim()}
+            className="w-full rounded-lg bg-primary py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
+          >
+            {savingUsername ? "Saving…" : "Save Username"}
+          </button>
+          {usernameMsg && (
+            <p className={`text-xs ${usernameError ? "text-destructive" : "text-emerald-500"}`}>
+              {usernameMsg}
+            </p>
+          )}
+        </div>
+
+        {/* Change password */}
+        <div className="pt-2 space-y-2">
+          <p className="text-foreground text-sm font-semibold">Change Password</p>
+          <input
+            type="password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            placeholder="New password"
+            className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:ring-1 focus:ring-primary"
+          />
+          <button
+            onClick={handleChangePassword}
+            disabled={savingPassword || !newPassword}
+            className="w-full rounded-lg bg-primary py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
+          >
+            {savingPassword ? "Saving…" : "Save Password"}
+          </button>
+          {passwordMsg && (
+            <p className={`text-xs ${passwordError ? "text-destructive" : "text-emerald-500"}`}>
+              {passwordMsg}
+            </p>
+          )}
         </div>
 
       </div>
