@@ -40,11 +40,11 @@ export function SignUp() {
   }
 
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-center px-6">
+    <div className="min-h-screen bg-background flex flex-col items-center justify-start pt-20 px-6">
       <div className="w-full max-w-sm space-y-8">
-        <div className="text-center">
-          <h1 className="text-primary text-6xl font-bold leading-tight">
-            The<br />Social<br />Market
+        <div className="flex justify-center">
+          <h1 className="text-primary text-5xl font-bold leading-tight">
+            <h1 text-2xl>The</h1><span className="text-white">Social Market</span>
           </h1>
         </div>
 
