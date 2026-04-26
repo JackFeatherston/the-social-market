@@ -406,7 +406,14 @@ export function CreateBet() {
                 <input
                   type="number"
                   value={wager}
-                  onChange={(e) => setWager(e.target.value)}
+                  onChange={(e) => {
+                    const value = e.target.value;
+
+                    // Allow only numbers with up to 2 decimal places
+                    if (/^\d*\.?\d{0,2}$/.test(value)) {
+                      setWager(value);
+                    }
+                  }}
                   placeholder="0"
                   min="0"
                   max={userBalance ?? undefined}
