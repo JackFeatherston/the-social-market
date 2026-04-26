@@ -195,7 +195,7 @@ export function Home() {
                         ))}
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-primary">
+                        <span className="text-foreground">
                           {formatCurrency(bet.total_pot)}
                         </span>
                         <span
