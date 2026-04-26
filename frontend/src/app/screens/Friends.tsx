@@ -294,6 +294,8 @@ export function Friends() {
                 const pid = invite.participant_id;
                 const processing = processingInvite === pid;
                 const pickValid = isPickValid(invite);
+                const customWagerVal = parseFloat(wagerSelections[pid] ?? "");
+                const finalWager = !isNaN(customWagerVal) && customWagerVal > 0 ? customWagerVal : invite.amount;
 
                 return (
                   <div key={pid} className="bg-card border border-border rounded-2xl p-5 space-y-4">
@@ -426,14 +428,25 @@ export function Friends() {
                       </button>
                       <button
                         onClick={() => acceptInvite(invite)}
-                        disabled={!pickValid || processing || (me !== null && Number(invite.amount) > Number(me.balance))}
+                        disabled={!pickValid || processing || (me !== null && finalWager > Number(me.balance))}
                         className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium disabled:opacity-40"
                       >
                         {processing ? "..." : "Accept"}
                       </button>
                     </div>
-                    {me !== null && Number(invite.amount) > Number(me.balance) && (
-                      <p className="text-destructive text-xs text-center">Not enough funds to accept!</p>
+                    {me !== null && finalWager > Number(me.balance) && (
+                      <p className="text-destructive text-xs text-center">
+                        Not enough funds! Enter a lower wager to accept.
+                      </p>
+                    )}
+                    {!pickValid && (me === null || finalWager <= Number(me.balance)) && (
+                      <p className="text-muted-foreground text-xs text-center">
+                        {invite.bet_type === "above-below"
+                          ? "Enter a threshold and pick a direction above."
+                          : invite.bet_type === "happens-or-not"
+                          ? "Pick Yes or No above to continue."
+                          : "Complete your pick above to accept."}
+                      </p>
                     )}
                   </div>
                 );
