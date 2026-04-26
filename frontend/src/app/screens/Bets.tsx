@@ -117,8 +117,8 @@ export function Bets() {
 
   function BetCard({ bet }: { bet: BetSummary }) {
     return (
-      <Link to={`/bet/${bet.id}`}>
-        <div className="glass rounded-2xl p-4 space-y-3 hover:bg-white/10 transition-colors">
+      <Link to={`/bet/${bet.id}`} className="block">
+        <div className="glass rounded-2xl p-5 space-y-4 hover:bg-white/10 transition-colors">
           <div className="flex items-start justify-between gap-3">
             <div className="flex-1 min-w-0">
               <p className="text-foreground line-clamp-2">{bet.title}</p>
@@ -301,7 +301,7 @@ export function Bets() {
             ) : activeBets.length === 0 ? (
               <div className="glass rounded-2xl p-4 text-muted-foreground">No active bets</div>
             ) : (
-              <div className="space-y-2">
+              <div className="flex flex-col gap-3">
                 {activeBets.map((bet) => (
                   <BetCard key={bet.id} bet={bet} />
                 ))}
@@ -323,7 +323,7 @@ export function Bets() {
             ) : closedBets.length === 0 ? (
               <div className="glass rounded-2xl p-4 text-muted-foreground">No closed bets</div>
             ) : (
-              <div className="space-y-2">
+              <div className="flex flex-col gap-3">
                 {closedBets.map((bet) => (
                   <BetCard key={bet.id} bet={bet} />
                 ))}
