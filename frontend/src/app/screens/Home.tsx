@@ -34,6 +34,32 @@ interface BalancePoint {
   amount: number;
 }
 
+const AVATAR_COLORS = [
+  "bg-teal-500",
+  "bg-rose-400",
+  "bg-violet-500",
+  "bg-pink-400",
+  "bg-indigo-400",
+  "bg-amber-500",
+  "bg-emerald-500",
+  "bg-sky-500",
+];
+
+function getInitials(displayName: string | null, username: string): string {
+  if (displayName) {
+    const parts = displayName.trim().split(/\s+/);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return displayName.slice(0, 2).toUpperCase();
+  }
+  return username.slice(0, 2).toUpperCase();
+}
+
+function colorIndex(id: string): number {
+  let hash = 0;
+  for (const c of id) hash = (hash * 31 + c.charCodeAt(0)) & 0xffff;
+  return hash % AVATAR_COLORS.length;
+}
+
 const STATUS_COLORS: Record<string, string> = {
   active: "bg-primary",
   pending: "bg-muted",
@@ -78,6 +104,7 @@ export function Home() {
   const [activeBets, setActiveBets] = useState<ActiveBet[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [usernameMap, setUsernameMap] = useState<Record<string, string>>({});
+  const [displayNameMap, setDisplayNameMap] = useState<Record<string, string | null>>({});
   const [balanceData, setBalanceData] = useState<BalancePoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [inviteCount, setInviteCount] = useState(0);
@@ -216,12 +243,12 @@ export function Home() {
                   />
                   <Tooltip
                     contentStyle={{
-                    backgroundColor: "rgba(0, 0, 0, 0.4)",
-                    backdropFilter: "blur(8px)",
-                    border: "1px solid rgba(255, 255, 255, 0.1)",
-                    borderRadius: "12px",
-                    padding: "8px 12px",
-                  }}
+                      backgroundColor: "rgba(0, 0, 0, 0.4)",
+                      backdropFilter: "blur(8px)",
+                      border: "1px solid rgba(255, 255, 255, 0.1)",
+                      borderRadius: "12px",
+                      padding: "8px 12px",
+                    }}
                     labelStyle={{ color: "var(--foreground)" }}
                     itemStyle={{ color: "var(--primary)" }}
                     formatter={(value: number) => [`$${value}`, "Balance"]}
