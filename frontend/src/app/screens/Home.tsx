@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { Bell } from "lucide-react";
+import { Wallet } from "lucide-react";
 import { BottomNav } from "../components/BottomNav";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../../lib/supabase";
@@ -24,6 +25,7 @@ interface ActivityItem {
   activity_type: string;
   amount: number | null;
   bets: { title: string } | null;
+  //profiles: { username: string } | null;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -38,24 +40,24 @@ function formatCurrency(n: number) {
   return "$" + n.toFixed(0);
 }
 
-function formatActivity(item: ActivityItem): {
-  text: string;
-  color: string;
+function formatActivity(item: ActivityItem, username: string): {
+  action: string;
+  bet: string;
   amount: string | null;
 } {
   const title = item.bets?.title ?? "a bet";
   const amt = item.amount != null ? formatCurrency(item.amount) : null;
   switch (item.activity_type) {
     case "bet_won":
-      return { text: `You won on ${title}`, color: "text-success", amount: amt };
+      return { action: username, bet: `won ${title}`, amount: amt ? `+${amt}` : null };
     case "bet_lost":
-      return { text: `You lost on ${title}`, color: "text-destructive", amount: amt };
+      return { action: username, bet: `lost money to ${title}`, amount: amt ? `-${amt}` : null };
     case "bet_joined":
-      return { text: `You joined ${title}`, color: "text-primary", amount: amt };
+      return { action: username, bet: `joined ${title}`, amount: amt };
     case "bet_created":
-      return { text: `You created ${title}`, color: "text-primary", amount: null };
+      return { action: username, bet: `created ${title}`, amount: null };
     default:
-      return { text: `Activity on ${title}`, color: "text-muted-foreground", amount: amt };
+      return { action: username, bet: `activity on ${title}`, amount: amt };
   }
 }
 
@@ -85,6 +87,7 @@ export function Home() {
         supabase
           .from("activity_feed")
           .select("id, activity_type, amount, bets(title)")
+          .eq("user_id", user?.id ?? "")
           .order("created_at", { ascending: false })
           .limit(10),
         supabase
@@ -108,7 +111,7 @@ export function Home() {
       <div className="overflow-y-auto h-full px-6 pt-8 pb-6 space-y-6">
         <div className="flex items-center justify-between">
           <h2 className="text-foreground">
-            Hey, {profile?.first_name ?? profile?.username ?? "..."} 👋
+            Hey, {profile?.first_name ?? profile?.username ?? "..."} 
           </h2>
           <div className="flex items-center gap-2">
             <button
@@ -123,7 +126,8 @@ export function Home() {
               )}
             </button>
             <div className="px-4 py-2 rounded-full bg-card border border-border flex items-center gap-2">
-              <span className="text-primary">💰</span>
+              <Wallet size={18} className="text-primary" strokeWidth={2.5} />
+              <span className="text-primary"></span>
               <span className="text-foreground">
                 {profile ? formatCurrency(profile.balance) : "..."}
               </span>
@@ -199,16 +203,22 @@ export function Home() {
           ) : (
             <div className="space-y-3">
               {activity.map((item) => {
-                const { text, color, amount } = formatActivity(item);
+                const { action, bet, amount } = formatActivity(item, profile?.first_name ?? "You");
                 return (
                   <div
                     key={item.id}
-                    className="bg-card rounded-2xl p-4 border border-border flex items-center justify-between"
+                    className="bg-card rounded-2xl p-4 border border-border flex items-center gap-4"
                   >
-                    <div className="flex-1">
-                      <p className={`text-foreground ${color}`}>{text}</p>
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/30 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-foreground text-sm font-medium">{action}</p>
+                      <p className="text-muted-foreground text-sm">
+                        {bet}
+                      </p>
                     </div>
-                    {amount && <span className={color}>{amount}</span>}
+                    {amount && (
+                      <span className="text-foreground font-medium">{amount}</span>
+                    )}
                   </div>
                 );
               })}
