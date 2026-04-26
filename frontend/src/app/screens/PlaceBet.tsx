@@ -164,8 +164,12 @@ export function PlaceBet() {
     setSubmitting(true);
     setSubmitError(null);
 
-    if (userBalance !== null && parseFloat(wager) > userBalance) {
-      setSubmitError(`Insufficient balance. You have $${userBalance.toFixed(2)} available.`);
+    if (userBalance === null || parseFloat(wager) > userBalance) {
+      setSubmitError(
+        userBalance === null
+          ? "Unable to verify your balance. Please try again."
+          : `Insufficient balance. You have $${userBalance.toFixed(2)} available.`
+      );
       setSubmitting(false);
       return;
     }
@@ -396,7 +400,7 @@ export function PlaceBet() {
 
             <button
               onClick={handlePlaceBet}
-              disabled={!selectedOutcome || !wager || submitting || (userBalance !== null && parseFloat(wager) > userBalance)}
+              disabled={!selectedOutcome || !wager || submitting || userBalance === null || parseFloat(wager) > userBalance}
               className="w-full py-4 rounded-2xl bg-primary text-primary-foreground font-semibold hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {submitting ? "Placing..." : "Place Bet"}

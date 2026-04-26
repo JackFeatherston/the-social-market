@@ -233,9 +233,17 @@ CREATE TRIGGER bets_updated_at         BEFORE UPDATE ON bets         FOR EACH RO
 CREATE OR REPLACE FUNCTION deduct_wager_on_join()
 RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER AS $$
 DECLARE
-  new_balance NUMERIC(10,2);
+  new_balance     NUMERIC(10,2);
+  current_balance NUMERIC(10,2);
 BEGIN
   IF NEW.status = 'accepted' AND (OLD.status IS DISTINCT FROM 'accepted') THEN
+    SELECT balance INTO current_balance FROM profiles WHERE id = NEW.user_id;
+
+    IF current_balance < NEW.amount THEN
+      RAISE EXCEPTION 'Insufficient balance: you have $% but the wager is $%.',
+        current_balance, NEW.amount;
+    END IF;
+
     UPDATE profiles
     SET balance = balance - NEW.amount
     WHERE id = NEW.user_id
