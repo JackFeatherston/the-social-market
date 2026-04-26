@@ -33,7 +33,7 @@ function getInitials(displayName: string | null, username: string): string {
 
 const BET_TYPES: { id: BetType; label: string; description: string }[] = [
   { id: "above-below", label: "Above / Below", description: "Bet whether a value exceeds or falls under a threshold" },
-  { id: "happens-or-not", label: "Happens or Not", description: "Binary yes/no outcome bet" },
+  { id: "happens-or-not", label: "Happens or Not", description: "Yes/No outcome bet" },
   { id: "how-many", label: "How Many Times", description: "Bet on a count or frequency outcome" },
 ];
 
