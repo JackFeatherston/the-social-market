@@ -105,7 +105,7 @@ export function Home() {
   return (
     <div className="relative h-full flex flex-col bg-background">
       <div className="relative flex-1 min-h-0">
-      <div className="overflow-y-auto h-full px-6 pt-8 pb-6 space-y-6">
+      <div className="overflow-y-auto scrollbar-hide h-full px-6 pt-8 pb-6 space-y-6">
         <div className="flex items-center justify-between">
           <h2 className="text-foreground">
             Hey, {profile?.first_name ?? profile?.username ?? "..."} 👋
