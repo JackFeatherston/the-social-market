@@ -77,8 +77,6 @@ export function CreateBet() {
   const [launchError, setLaunchError] = useState<string | null>(null);
   const [userBalance, setUserBalance] = useState<number | null>(null);
 
-  const pickIsValid = betSelection.trim().length > 0;
-
   useEffect(() => {
     async function loadFriends() {
       const { data } = await supabase
