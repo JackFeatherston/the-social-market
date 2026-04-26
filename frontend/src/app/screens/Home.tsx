@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
+import { Bell } from "lucide-react";
 import { BottomNav } from "../components/BottomNav";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../../lib/supabase";
@@ -60,15 +61,17 @@ function formatActivity(item: ActivityItem): {
 
 export function Home() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [activeBets, setActiveBets] = useState<ActiveBet[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [inviteCount, setInviteCount] = useState(0);
 
   useEffect(() => {
     if (!user) return;
     async function fetchData() {
-      const [profileRes, betsRes, activityRes] = await Promise.all([
+      const [profileRes, betsRes, activityRes, invitesRes] = await Promise.all([
         supabase
           .from("profiles")
           .select("first_name, username, balance")
@@ -84,10 +87,16 @@ export function Home() {
           .select("id, activity_type, amount, bets(title)")
           .order("created_at", { ascending: false })
           .limit(10),
+        supabase
+          .from("bet_participants")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", user?.id ?? "")
+          .eq("status", "invited"),
       ]);
       setProfile(profileRes.data ?? null);
       setActiveBets((betsRes.data ?? []) as ActiveBet[]);
       setActivity((activityRes.data ?? []) as unknown as ActivityItem[]);
+      setInviteCount(invitesRes.count ?? 0);
       setLoading(false);
     }
     fetchData();
@@ -101,11 +110,24 @@ export function Home() {
           <h2 className="text-foreground">
             Hey, {profile?.first_name ?? profile?.username ?? "..."} 👋
           </h2>
-          <div className="px-4 py-2 rounded-full bg-card border border-border flex items-center gap-2">
-            <span className="text-primary">💰</span>
-            <span className="text-foreground">
-              {profile ? formatCurrency(profile.balance) : "..."}
-            </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => navigate("/friends", { state: { openInbox: true } })}
+              className="relative w-9 h-9 rounded-full bg-card border border-border flex items-center justify-center text-foreground"
+            >
+              <Bell size={16} />
+              {inviteCount > 0 && (
+                <span className="absolute -top-1 -right-1 bg-destructive text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center leading-none">
+                  {inviteCount}
+                </span>
+              )}
+            </button>
+            <div className="px-4 py-2 rounded-full bg-card border border-border flex items-center gap-2">
+              <span className="text-primary">💰</span>
+              <span className="text-foreground">
+                {profile ? formatCurrency(profile.balance) : "..."}
+              </span>
+            </div>
           </div>
         </div>
 
