@@ -86,6 +86,40 @@ CREATE TABLE bet_participants (
 );
 
 -- ============================================================
+-- BET RESOLUTION VOTES
+-- ============================================================
+
+CREATE TABLE bet_resolutions (
+  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  bet_id          UUID NOT NULL UNIQUE REFERENCES bets(id) ON DELETE CASCADE,
+  phase           TEXT NOT NULL DEFAULT 'preliminary'
+                  CHECK (phase IN ('preliminary', 'outcome', 'finalized')),
+  trusted_user_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE bet_preliminary_votes (
+  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  bet_id          UUID NOT NULL REFERENCES bets(id) ON DELETE CASCADE,
+  voter_id        UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  trusted_user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT unique_preliminary_vote UNIQUE (bet_id, voter_id)
+);
+
+CREATE TABLE bet_outcome_votes (
+  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  bet_id          UUID NOT NULL REFERENCES bets(id) ON DELETE CASCADE,
+  voter_id        UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  outcome         TEXT NOT NULL,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT unique_outcome_vote UNIQUE (bet_id, voter_id)
+);
+
+-- ============================================================
 -- ACTIVITY FEED
 -- ============================================================
 
@@ -123,6 +157,9 @@ CREATE INDEX idx_bets_creator                 ON bets(creator_id);
 CREATE INDEX idx_bets_status                  ON bets(status);
 CREATE INDEX idx_bet_participants_bet         ON bet_participants(bet_id);
 CREATE INDEX idx_bet_participants_user        ON bet_participants(user_id);
+CREATE INDEX idx_bet_resolutions_bet          ON bet_resolutions(bet_id);
+CREATE INDEX idx_preliminary_votes_bet        ON bet_preliminary_votes(bet_id);
+CREATE INDEX idx_outcome_votes_bet            ON bet_outcome_votes(bet_id);
 CREATE INDEX idx_activity_feed_user           ON activity_feed(user_id);
 CREATE INDEX idx_activity_feed_created        ON activity_feed(created_at DESC);
 CREATE INDEX idx_wallet_transactions_user     ON wallet_transactions(user_id);
@@ -135,6 +172,9 @@ ALTER TABLE profiles             ENABLE ROW LEVEL SECURITY;
 ALTER TABLE friendships          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bets                 ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bet_participants     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bet_resolutions      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bet_preliminary_votes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bet_outcome_votes    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE activity_feed        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE wallet_transactions  ENABLE ROW LEVEL SECURITY;
 
@@ -175,6 +215,80 @@ CREATE POLICY "bet_participants_insert" ON bet_participants FOR INSERT WITH CHEC
   OR EXISTS (SELECT 1 FROM bets b WHERE b.id = bet_participants.bet_id AND b.creator_id = auth.uid())
 );
 CREATE POLICY "bet_participants_update_own" ON bet_participants FOR UPDATE USING (auth.uid() = user_id);
+
+-- bet resolution: visible to the creator and all participants
+CREATE POLICY "bet_resolutions_read" ON bet_resolutions FOR SELECT USING (
+  EXISTS (
+    SELECT 1 FROM bets b
+    WHERE b.id = bet_resolutions.bet_id AND b.creator_id = auth.uid()
+  )
+  OR EXISTS (
+    SELECT 1 FROM bet_participants bp
+    WHERE bp.bet_id = bet_resolutions.bet_id AND bp.user_id = auth.uid()
+  )
+);
+CREATE POLICY "bet_resolutions_insert_creator" ON bet_resolutions FOR INSERT WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM bets b
+    WHERE b.id = bet_resolutions.bet_id AND b.creator_id = auth.uid()
+  )
+);
+CREATE POLICY "bet_resolutions_update_participant" ON bet_resolutions FOR UPDATE USING (
+  EXISTS (
+    SELECT 1 FROM bet_participants bp
+    WHERE bp.bet_id = bet_resolutions.bet_id AND bp.user_id = auth.uid() AND bp.status = 'accepted'
+  )
+  OR EXISTS (
+    SELECT 1 FROM bets b
+    WHERE b.id = bet_resolutions.bet_id AND b.creator_id = auth.uid()
+  )
+);
+
+-- preliminary trust votes: accepted participants vote for one accepted participant
+CREATE POLICY "preliminary_votes_read" ON bet_preliminary_votes FOR SELECT USING (
+  EXISTS (
+    SELECT 1 FROM bets b
+    WHERE b.id = bet_preliminary_votes.bet_id AND b.creator_id = auth.uid()
+  )
+  OR EXISTS (
+    SELECT 1 FROM bet_participants bp
+    WHERE bp.bet_id = bet_preliminary_votes.bet_id AND bp.user_id = auth.uid()
+  )
+);
+CREATE POLICY "preliminary_votes_insert_own" ON bet_preliminary_votes FOR INSERT WITH CHECK (
+  auth.uid() = voter_id
+  AND EXISTS (
+    SELECT 1 FROM bet_participants bp
+    WHERE bp.bet_id = bet_preliminary_votes.bet_id AND bp.user_id = auth.uid() AND bp.status = 'accepted'
+  )
+  AND EXISTS (
+    SELECT 1 FROM bet_participants bp
+    WHERE bp.bet_id = bet_preliminary_votes.bet_id AND bp.user_id = trusted_user_id AND bp.status = 'accepted'
+  )
+);
+CREATE POLICY "preliminary_votes_update_own" ON bet_preliminary_votes FOR UPDATE USING (auth.uid() = voter_id)
+WITH CHECK (auth.uid() = voter_id);
+
+-- outcome votes: accepted participants vote for the outcome they believe occurred
+CREATE POLICY "outcome_votes_read" ON bet_outcome_votes FOR SELECT USING (
+  EXISTS (
+    SELECT 1 FROM bets b
+    WHERE b.id = bet_outcome_votes.bet_id AND b.creator_id = auth.uid()
+  )
+  OR EXISTS (
+    SELECT 1 FROM bet_participants bp
+    WHERE bp.bet_id = bet_outcome_votes.bet_id AND bp.user_id = auth.uid()
+  )
+);
+CREATE POLICY "outcome_votes_insert_own" ON bet_outcome_votes FOR INSERT WITH CHECK (
+  auth.uid() = voter_id
+  AND EXISTS (
+    SELECT 1 FROM bet_participants bp
+    WHERE bp.bet_id = bet_outcome_votes.bet_id AND bp.user_id = auth.uid() AND bp.status = 'accepted'
+  )
+);
+CREATE POLICY "outcome_votes_update_own" ON bet_outcome_votes FOR UPDATE USING (auth.uid() = voter_id)
+WITH CHECK (auth.uid() = voter_id);
 
 -- activity feed: each user sees their own entries
 CREATE POLICY "activity_feed_own_read"   ON activity_feed FOR SELECT USING (auth.uid() = user_id);
@@ -228,6 +342,9 @@ $$;
 CREATE TRIGGER profiles_updated_at     BEFORE UPDATE ON profiles     FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 CREATE TRIGGER friendships_updated_at  BEFORE UPDATE ON friendships  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 CREATE TRIGGER bets_updated_at         BEFORE UPDATE ON bets         FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+CREATE TRIGGER bet_resolutions_updated_at      BEFORE UPDATE ON bet_resolutions      FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+CREATE TRIGGER preliminary_votes_updated_at    BEFORE UPDATE ON bet_preliminary_votes FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+CREATE TRIGGER outcome_votes_updated_at        BEFORE UPDATE ON bet_outcome_votes    FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- 3. Deduct wager from balance when a participant accepts a bet invite
 CREATE OR REPLACE FUNCTION deduct_wager_on_join()
@@ -328,6 +445,129 @@ BEGIN
     INSERT INTO activity_feed (user_id, bet_id, activity_type, amount)
     VALUES (rec.user_id, bet_id_param, 'bet_lost', rec.amount);
   END LOOP;
+END;
+$$;
+
+-- 5. Finalize a resolution vote: recompute the trusted voter and winning
+--    outcome, then call settle_bet. The trusted voter's outcome vote counts 2x.
+CREATE OR REPLACE FUNCTION finalize_bet_resolution(
+  bet_id_param UUID,
+  winning_outcome_param TEXT
+)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  accepted_count       INT;
+  preliminary_count    INT;
+  outcome_count        INT;
+  trusted_user         UUID;
+  computed_outcome     TEXT;
+  tied_outcome_count   INT;
+  max_weight           INT;
+  rec                  RECORD;
+  new_balance          NUMERIC(10,2);
+BEGIN
+  SELECT COUNT(*) INTO accepted_count
+  FROM bet_participants
+  WHERE bet_id = bet_id_param AND status = 'accepted';
+
+  IF accepted_count = 0 THEN
+    RAISE EXCEPTION 'Cannot settle a bet with no accepted participants.';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM bet_participants
+    WHERE bet_id = bet_id_param AND user_id = auth.uid() AND status = 'accepted'
+  ) THEN
+    RAISE EXCEPTION 'Only accepted participants can finalize this settlement vote.';
+  END IF;
+
+  SELECT COUNT(*) INTO preliminary_count
+  FROM bet_preliminary_votes
+  WHERE bet_id = bet_id_param;
+
+  IF accepted_count >= 3 AND preliminary_count < accepted_count THEN
+    RAISE EXCEPTION 'The preliminary trust vote is not complete.';
+  END IF;
+
+  IF accepted_count >= 3 THEN
+    SELECT trusted_user_id INTO trusted_user
+    FROM bet_preliminary_votes
+    WHERE bet_id = bet_id_param
+    GROUP BY trusted_user_id
+    ORDER BY COUNT(*) DESC, trusted_user_id ASC
+    LIMIT 1;
+  END IF;
+
+  SELECT COUNT(*) INTO outcome_count
+  FROM bet_outcome_votes
+  WHERE bet_id = bet_id_param;
+
+  IF outcome_count < accepted_count THEN
+    RAISE EXCEPTION 'The outcome vote is not complete.';
+  END IF;
+
+  WITH tallies AS (
+    SELECT
+      outcome,
+      SUM(CASE WHEN voter_id = trusted_user THEN 2 ELSE 1 END) AS weighted_votes
+    FROM bet_outcome_votes
+    WHERE bet_id = bet_id_param
+    GROUP BY outcome
+  ),
+  top_tallies AS (
+    SELECT *
+    FROM tallies
+    WHERE weighted_votes = (SELECT MAX(weighted_votes) FROM tallies)
+  )
+  SELECT MIN(outcome), COUNT(*), MAX(weighted_votes)
+  INTO computed_outcome, tied_outcome_count, max_weight
+  FROM top_tallies;
+
+  IF computed_outcome IS NULL THEN
+    RAISE EXCEPTION 'No winning outcome could be computed.';
+  END IF;
+
+  IF tied_outcome_count > 1 THEN
+    UPDATE bet_resolutions
+    SET phase = 'finalized', trusted_user_id = trusted_user
+    WHERE bet_id = bet_id_param;
+
+    UPDATE bets
+    SET status = 'settled', winning_outcome = NULL, resolved_at = NOW()
+    WHERE id = bet_id_param;
+
+    FOR rec IN
+      SELECT *
+      FROM bet_participants
+      WHERE bet_id = bet_id_param AND status = 'accepted'
+    LOOP
+      UPDATE profiles
+      SET balance = balance + rec.amount
+      WHERE id = rec.user_id
+      RETURNING balance INTO new_balance;
+
+      UPDATE bet_participants
+      SET status = 'paid_out', payout = rec.amount
+      WHERE id = rec.id;
+
+      INSERT INTO wallet_transactions (user_id, bet_id, transaction_type, amount, balance_after)
+      VALUES (rec.user_id, bet_id_param, 'bet_refund', rec.amount, new_balance);
+    END LOOP;
+
+    RETURN;
+  END IF;
+
+  IF computed_outcome != winning_outcome_param THEN
+    RAISE EXCEPTION 'Submitted outcome does not match the weighted vote result.';
+  END IF;
+
+  UPDATE bet_resolutions
+  SET phase = 'finalized', trusted_user_id = trusted_user
+  WHERE bet_id = bet_id_param;
+
+  PERFORM settle_bet(bet_id_param, computed_outcome);
 END;
 $$;
 

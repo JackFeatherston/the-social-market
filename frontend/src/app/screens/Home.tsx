@@ -141,14 +141,14 @@ export function Home() {
       const userIds = [...new Set(activityData.map((a) => a.user_id))];
       const profilesRes = await supabase
         .from("profiles")
-        .select("id, username, display_name")
+        .select("id, username, first_name")
         .in("id", userIds.length > 0 ? userIds : [""]);
 
       const map: Record<string, string> = {};
       const dnMap: Record<string, string | null> = {};
-      (profilesRes.data ?? []).forEach((p: { id: string; username: string; display_name: string | null }) => {
-        map[p.id] = p.username;
-        dnMap[p.id] = p.display_name;
+      (profilesRes.data ?? []).forEach((p: { id: string; username: string; first_name: string | null }) => {
+        map[p.id] = p.first_name ?? p.username;
+        dnMap[p.id] = p.first_name;
       });
 
       setProfile(profileRes.data ?? null);
