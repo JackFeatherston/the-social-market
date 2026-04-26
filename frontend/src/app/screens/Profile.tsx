@@ -120,7 +120,7 @@ export function Profile() {
 
   if (loading) {
     return (
-      <div className="relative min-h-screen bg-background pb-24 flex items-center justify-center">
+      <div className="relative h-full flex flex-col bg-background items-center justify-center">
         <p className="text-muted-foreground text-sm">Loading...</p>
       </div>
     );
@@ -130,8 +130,8 @@ export function Profile() {
   const initials = profile ? getInitials(profile.display_name, profile.username) : "??";
 
   return (
-    <div className="relative min-h-screen bg-background pb-24">
-      <div className="px-6 pt-8 space-y-4">
+    <div className="relative h-full flex flex-col bg-background">
+      <div className="flex-1 overflow-y-auto px-6 pt-8 space-y-4">
 
         {/* Header */}
         <div className="flex items-center justify-between">

@@ -60,7 +60,7 @@ export function BottomNav({ active }: BottomNavProps) {
           </button>
         </Link>
 
-        <Link to="/home">
+        <Link to="/profile">
           <button
             className={`flex flex-col items-center gap-0.5 transition-colors px-2 py-1.5 ${
               active === "profile" ? "text-primary" : "text-muted-foreground"
