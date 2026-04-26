@@ -121,6 +121,7 @@ export function Home() {
         supabase
           .from("bets_summary")
           .select("id, title, status, total_pot, participant_count")
+          .in("id", myBetIds.length > 0 ? myBetIds : [""])
           .in("status", ["pending", "active", "resolving"])
           .order("created_at", { ascending: false }),
         supabase

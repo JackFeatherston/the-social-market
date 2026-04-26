@@ -58,6 +58,24 @@ export function CreateBet() {
   // how-many
   const [howMany, setHowMany] = useState(5);
 
+  // settlement
+  type SettlementMethod = 'group_vote' | 'trusted_vote' | 'location';
+  type LocationMode = 'arrival' | 'presence' | 'count';
+  const [settlementMethod, setSettlementMethod] = useState<SettlementMethod>('group_vote');
+  const [locationMode, setLocationMode] = useState<LocationMode | ''>('');
+  const [locationResultType, setLocationResultType] = useState('');
+  const [locationName, setLocationName] = useState('');
+  const [locationLat, setLocationLat] = useState('');
+  const [locationLng, setLocationLng] = useState('');
+  const [checkInRadius, setCheckInRadius] = useState('100');
+  const [checkInDeadline, setCheckInDeadline] = useState('');
+  const [trackingStart, setTrackingStart] = useState('');
+  const [trackingEnd, setTrackingEnd] = useState('');
+  const [locationTargetUserId, setLocationTargetUserId] = useState('');
+  const [locationAddress, setLocationAddress] = useState('');
+  const [geocoding, setGeocoding] = useState(false);
+  const [geocodeError, setGeocodeError] = useState('');
+
   const chosenOutcome =
     betType === "happens-or-not" ? yesNo || null :
     betType === "above-below" ? (direction && threshold ? `${direction} ${threshold}` : null) :
@@ -69,6 +87,14 @@ export function CreateBet() {
     betType === "above-below" ? !!direction && !!threshold :
     betType === "how-many" ? true :
     false;
+
+  const locationIsValid =
+    settlementMethod !== 'location' || (
+      !!locationMode && !!locationName && !!locationLat && !!locationLng &&
+      (locationMode !== 'arrival'  || !!locationResultType) &&
+      (locationMode !== 'presence' || (!!locationTargetUserId && !!checkInDeadline)) &&
+      (locationMode !== 'count'    || (!!locationTargetUserId && !!trackingStart && !!trackingEnd))
+    );
 
   const [wager, setWager] = useState("");
 
@@ -111,6 +137,30 @@ export function CreateBet() {
     );
   }
 
+  async function geocodeAddress() {
+    if (!locationAddress.trim()) return;
+    setGeocoding(true);
+    setGeocodeError('');
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(locationAddress)}&format=json&limit=1`,
+        { headers: { 'Accept-Language': 'en' } }
+      );
+      const data = await res.json();
+      if (!data.length) {
+        setGeocodeError('Address not found. Try a more specific search.');
+        setGeocoding(false);
+        return;
+      }
+      setLocationLat(data[0].lat);
+      setLocationLng(data[0].lon);
+      setLocationName(data[0].display_name);
+    } catch {
+      setGeocodeError('Failed to search. Check your connection.');
+    }
+    setGeocoding(false);
+  }
+
   async function handleLaunch() {
     if (!betTitle || !betType || !wager || !closeDate) return;
     setLaunching(true);
@@ -138,6 +188,19 @@ export function CreateBet() {
       expires_at: new Date(closeDate).toISOString(),
       creator_id: user.id,
       status: "pending",
+      settlement_method: settlementMethod,
+      ...(settlementMethod === 'location' && {
+        location_mode:            locationMode || null,
+        location_result_type:     locationResultType || null,
+        location_name:            locationName || null,
+        location_lat:             locationLat  ? parseFloat(locationLat)  : null,
+        location_lng:             locationLng  ? parseFloat(locationLng)  : null,
+        check_in_radius_meters:   checkInRadius ? parseInt(checkInRadius, 10) : 100,
+        check_in_deadline:        checkInDeadline ? new Date(checkInDeadline).toISOString() : null,
+        tracking_start:           trackingStart ? new Date(trackingStart).toISOString() : null,
+        tracking_end:             trackingEnd   ? new Date(trackingEnd).toISOString()   : null,
+        location_target_user_id:  locationTargetUserId || null,
+      }),
     });
 
     if (error) {
@@ -294,8 +357,212 @@ export function CreateBet() {
         {/* Step 3 — Bet Type + Pick + Wager */}
         {step === 3 && (
           <div className="space-y-5">
+            {/* Settlement method selector */}
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">How will this bet settle?</p>
+              {([
+                { id: 'group_vote',   label: 'Group Vote',        desc: 'All participants vote on the outcome' },
+                { id: 'trusted_vote', label: 'Trusted Vote',      desc: 'A trusted participant gets double-weight vote' },
+                { id: 'location',     label: 'Location Check-In', desc: 'Settled by GPS check-ins at a physical place' },
+              ] as { id: SettlementMethod; label: string; desc: string }[]).map((m) => (
+                <button key={m.id} onClick={() => setSettlementMethod(m.id)}
+                  className={`w-full text-left p-4 rounded-2xl border transition-all ${
+                    settlementMethod === m.id ? 'border-primary bg-primary/10' : 'border-border glass'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-foreground text-sm font-semibold">{m.label}</p>
+                      <p className="text-muted-foreground text-xs mt-0.5">{m.desc}</p>
+                    </div>
+                    {settlementMethod === m.id && <Check size={16} className="text-primary flex-shrink-0" />}
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {/* Location sub-fields */}
+            {settlementMethod === 'location' && (
+              <div className="glass-strong rounded-2xl p-4 space-y-4">
+                <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">Location Details</p>
+
+                {/* Mode */}
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Check-in mode</p>
+                  <div className="flex gap-2">
+                    {(['arrival', 'presence', 'count'] as LocationMode[]).map((m) => (
+                      <button
+                        key={m}
+                        onClick={() => { setLocationMode(m); setLocationResultType(''); setLocationTargetUserId(''); }}
+                        className={`flex-1 py-2 rounded-xl border text-xs font-semibold transition-all capitalize ${
+                          locationMode === m ? 'bg-primary border-primary text-primary-foreground' : 'border-border text-muted-foreground glass'
+                        }`}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Address search */}
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">Search address</p>
+                  <div className="flex gap-2">
+                    <input
+                      value={locationAddress}
+                      onChange={(e) => setLocationAddress(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && geocodeAddress()}
+                      placeholder="e.g. 123 Main St, New York"
+                      className="flex-1 bg-transparent text-foreground text-sm outline-none placeholder:text-muted-foreground"
+                    />
+                    <button
+                      onClick={geocodeAddress}
+                      disabled={geocoding || !locationAddress.trim()}
+                      className="px-3 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs font-semibold disabled:opacity-40"
+                    >
+                      {geocoding ? '...' : 'Search'}
+                    </button>
+                  </div>
+                  {geocodeError && <p className="text-destructive text-xs">{geocodeError}</p>}
+                </div>
+
+                {/* Resolved location confirmation */}
+                {locationName && (
+                  <div className="space-y-0.5 p-3 rounded-xl bg-white/5">
+                    <p className="text-foreground text-xs font-medium">{locationName}</p>
+                    <p className="text-muted-foreground text-xs">{locationLat}, {locationLng}</p>
+                  </div>
+                )}
+
+                {/* Radius */}
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Check-in radius (meters)</p>
+                  <input
+                    type="number"
+                    value={checkInRadius}
+                    onChange={(e) => setCheckInRadius(e.target.value)}
+                    placeholder="100"
+                    className="w-full bg-transparent text-foreground text-sm outline-none placeholder:text-muted-foreground"
+                  />
+                </div>
+
+                {/* Arrival-specific */}
+                {locationMode === 'arrival' && (
+                  <>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Result type</p>
+                      <div className="flex flex-col gap-2">
+                        {[
+                          { id: 'first_to_arrive',  label: 'First to arrive' },
+                          { id: 'last_to_arrive',   label: 'Last to arrive' },
+                          { id: 'late_by_deadline', label: 'Late by deadline (who missed it)' },
+                        ].map((rt) => (
+                          <button
+                            key={rt.id}
+                            onClick={() => setLocationResultType(rt.id)}
+                            className={`w-full text-left px-3 py-2 rounded-xl border text-sm transition-all ${
+                              locationResultType === rt.id ? 'border-primary bg-primary/10 text-foreground' : 'border-border text-muted-foreground glass'
+                            }`}
+                          >
+                            {rt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Deadline (optional)</p>
+                      <input
+                        type="datetime-local"
+                        value={checkInDeadline}
+                        onChange={(e) => setCheckInDeadline(e.target.value)}
+                        className="w-full bg-transparent text-foreground text-sm outline-none"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* Presence-specific */}
+                {locationMode === 'presence' && (
+                  <>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Target participant</p>
+                      <select
+                        value={locationTargetUserId}
+                        onChange={(e) => setLocationTargetUserId(e.target.value)}
+                        className="w-full bg-transparent text-foreground text-sm outline-none"
+                      >
+                        <option value="">Select a participant...</option>
+                        {selectedFriends.map((fid) => {
+                          const f = friendsList.find((x) => x.friend_id === fid);
+                          return (
+                            <option key={fid} value={fid}>
+                              {f?.display_name ?? f?.username ?? fid}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Deadline</p>
+                      <input
+                        type="datetime-local"
+                        value={checkInDeadline}
+                        onChange={(e) => setCheckInDeadline(e.target.value)}
+                        className="w-full bg-transparent text-foreground text-sm outline-none"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* Count-specific */}
+                {locationMode === 'count' && (
+                  <>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Target participant</p>
+                      <select
+                        value={locationTargetUserId}
+                        onChange={(e) => setLocationTargetUserId(e.target.value)}
+                        className="w-full bg-transparent text-foreground text-sm outline-none"
+                      >
+                        <option value="">Select a participant...</option>
+                        {selectedFriends.map((fid) => {
+                          const f = friendsList.find((x) => x.friend_id === fid);
+                          return (
+                            <option key={fid} value={fid}>
+                              {f?.display_name ?? f?.username ?? fid}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+                    <div className="space-y-3">
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">Tracking start</p>
+                        <input
+                          type="datetime-local"
+                          value={trackingStart}
+                          onChange={(e) => setTrackingStart(e.target.value)}
+                          className="w-full bg-transparent text-foreground text-sm outline-none"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">Tracking end</p>
+                        <input
+                          type="datetime-local"
+                          value={trackingEnd}
+                          onChange={(e) => setTrackingEnd(e.target.value)}
+                          className="w-full bg-transparent text-foreground text-sm outline-none"
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
             {/* Bet type selector */}
             <div className="space-y-2">
+              <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">What type of bet is this?</p>
               {BET_TYPES.map((t) => {
                 const active = betType === t.id;
                 return (
@@ -429,7 +696,7 @@ export function CreateBet() {
               <button onClick={() => setStep(2)} className="flex-1 py-3.5 rounded-2xl glass text-foreground text-sm font-semibold">Back</button>
               <button
                 onClick={() => setStep(4)}
-                disabled={!betType || !pickIsValid || !wager || (userBalance !== null && parseFloat(wager) > userBalance)}
+                disabled={!betType || !pickIsValid || !wager || (userBalance !== null && parseFloat(wager) > userBalance) || !locationIsValid}
                 className="flex-1 py-3.5 rounded-2xl bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-40"
               >
                 Next
@@ -470,6 +737,20 @@ export function CreateBet() {
                       return f?.display_name ?? f?.username ?? "";
                     }).join(", ")}
                   </span>
+                </div>
+              )}
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Settlement</span>
+                <span className="text-foreground font-medium">
+                  {settlementMethod === 'group_vote'   ? 'Group Vote' :
+                   settlementMethod === 'trusted_vote' ? 'Trusted Vote' :
+                   `Location — ${locationMode}`}
+                </span>
+              </div>
+              {settlementMethod === 'location' && locationName && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Place</span>
+                  <span className="text-foreground font-medium">{locationName}</span>
                 </div>
               )}
             </div>
