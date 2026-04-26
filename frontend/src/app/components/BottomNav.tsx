@@ -9,7 +9,7 @@ interface BottomNavProps {
 export function BottomNav({ active }: BottomNavProps) {
   const openBetMenu = useBetMenu();
   return (
-    <div className="flex-shrink-0 bg-[#0a0a0a]/95 backdrop-blur-xl border-t border-white/10 z-50 mt-auto">
+    <div className="flex-shrink-0 bg-[#0B0D10]/95 backdrop-blur-xl border-t border-white/10 z-50 mt-auto">
       <div className="flex items-center justify-around px-4 py-2 safe-area-bottom">
         <Link to="/home">
           <button

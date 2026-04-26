@@ -32,16 +32,18 @@ export function SignIn() {
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center px-6">
       <div className="w-full max-w-sm space-y-8">
-        <div className="text-center space-y-2">
-          <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-primary to-success mb-4">
-            <span className="text-3xl">📊</span>
-          </div>
-          <h1 className="text-primary">The Social Market</h1>
+        <div className="text-center">
+          <h1 className="text-primary text-4xl font-bold leading-tight">
+            The<br />Social Market
+          </h1>
+          {/* <h1 className="text-primary text-6xl font-bold leading-tight">
+            The<br />Social<br />Market
+          </h1> */}
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <label htmlFor="username" className="text-foreground/90">
+            <label htmlFor="username" className="block text-foreground/90 mb-2">
               Username
             </label>
             <input
@@ -56,7 +58,7 @@ export function SignIn() {
           </div>
 
           <div className="space-y-2">
-            <label htmlFor="password" className="text-foreground/90">
+            <label htmlFor="password" className="block text-foreground/90 mb-2">
               Password
             </label>
             <input

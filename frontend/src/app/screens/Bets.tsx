@@ -19,7 +19,7 @@ interface BetSummary {
 const TYPE_COLORS: Record<string, string> = {
   "above-below": "#ef4444",
   "happens-or-not": "#3b82f6",
-  "how-many": "#10b981",
+  "how-many": "#22C55E",
 };
 
 const TYPE_LABELS: Record<string, string> = {
@@ -155,7 +155,7 @@ export function Bets() {
                 </span>
               )}
             </div>
-            <span className="text-primary">{formatCurrency(bet.total_pot)}</span>
+            <span className="text-foreground">{formatCurrency(bet.total_pot)}</span>
           </div>
         </div>
       </Link>
