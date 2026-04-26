@@ -131,14 +131,17 @@ export function Home() {
         .in("id", userIds.length > 0 ? userIds : [""]);
 
       const map: Record<string, string> = {};
+      const dnMap: Record<string, string | null> = {};
       (profilesRes.data ?? []).forEach((p: { id: string; username: string; first_name: string | null }) => {
         map[p.id] = p.first_name ?? p.username;
+        dnMap[p.id] = p.first_name;
       });
 
       setProfile(profileRes.data ?? null);
       setActiveBets((betsRes.data ?? []) as ActiveBet[]);
       setActivity(activityData);
       setUsernameMap(map);
+      setDisplayNameMap(dnMap);
       setInviteCount(invitesRes.count ?? 0);
       setBalanceData((balanceRes.data ?? []) as BalancePoint[]);
       setLoading(false);
@@ -156,7 +159,7 @@ export function Home() {
         <div className="overflow-y-auto scrollbar-hide h-full px-6 pt-8 pb-6 space-y-6">
           <div className="flex items-center justify-between">
             <h2 className="text-foreground">
-              Hey, {profile?.first_name ?? profile?.username ?? "..."}
+              Hey, {profile?.first_name ?? profile?.username ?? "..."}!
             </h2>
             <div className="flex items-center gap-2">
               <button
@@ -272,7 +275,7 @@ export function Home() {
                         ))}
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-primary">
+                        <span className="text-foreground">
                           {formatCurrency(bet.total_pot)}
                         </span>
                         <span
@@ -312,12 +315,22 @@ export function Home() {
                     profile?.first_name ?? profile?.username ?? "You",
                     usernameMap
                   );
+                  const dn = item.user_id === user?.id
+                    ? null
+                    : (displayNameMap[item.user_id] ?? null);
+                  const un = item.user_id === user?.id
+                    ? (profile?.username ?? "")
+                    : (usernameMap[item.user_id] ?? "");
+                  const initials = getInitials(dn, un);
+                  const avatarColor = AVATAR_COLORS[colorIndex(item.user_id)];
                   return (
                     <div
                       key={item.id}
                       className="bg-card rounded-2xl p-4 border border-border flex items-center gap-4"
                     >
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/30 flex-shrink-0" />
+                      <div className={`w-10 h-10 rounded-full ${avatarColor} flex items-center justify-center flex-shrink-0`}>
+                        <span className="text-white text-sm font-semibold">{initials}</span>
+                      </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-foreground text-sm font-medium">{username}</p>
                         <p className="text-muted-foreground text-sm">
