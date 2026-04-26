@@ -416,13 +416,16 @@ export function Friends() {
                         Decline
                       </button>
                       <button
-                        onClick={() => acceptInvite(invite)}
-                        disabled={!pickValid || processing}
+                        onClick={() => acceptInvite(invite.participant_id)}
+                        disabled={!selected || processing || (me !== null && Number(invite.amount) > Number(me.balance))}
                         className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium disabled:opacity-40"
                       >
                         {processing ? "..." : "Accept"}
                       </button>
                     </div>
+                    {me !== null && Number(invite.amount) > Number(me.balance) && (
+                      <p className="text-destructive text-xs text-center">Not enough funds to accept!</p>
+                    )}
                   </div>
                 );
               })}

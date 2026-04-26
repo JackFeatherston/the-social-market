@@ -85,10 +85,17 @@ export function PlaceBet() {
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [userBalance, setUserBalance] = useState<number | null>(null);
 
   useEffect(() => {
     if (!user) return;
     fetchInvitedBets();
+    supabase
+      .from("profiles")
+      .select("balance")
+      .eq("id", user.id)
+      .single()
+      .then(({ data }) => setUserBalance(data?.balance ?? null));
   }, [user]);
 
   async function fetchInvitedBets() {
@@ -156,6 +163,16 @@ export function PlaceBet() {
     if (!selectedBet || !selectedOutcome || !wager || !user) return;
     setSubmitting(true);
     setSubmitError(null);
+
+    if (userBalance === null || parseFloat(wager) > userBalance) {
+      setSubmitError(
+        userBalance === null
+          ? "Unable to verify your balance. Please try again."
+          : `Insufficient balance. You have $${userBalance.toFixed(2)} available.`
+      );
+      setSubmitting(false);
+      return;
+    }
 
     const { error } = await supabase
       .from("bet_participants")
@@ -333,7 +350,12 @@ export function PlaceBet() {
 
             {/* Your Wager */}
             <div className="space-y-2">
-              <label className="text-foreground font-medium">Your Wager</label>
+              <div className="flex items-center justify-between">
+                <label className="text-foreground font-medium">Your Wager</label>
+                <span className="text-muted-foreground text-xs">
+                  Balance: ${userBalance !== null ? userBalance.toFixed(2) : "..."}
+                </span>
+              </div>
               <div className="relative">
                 <span className="absolute left-4 top-1/2 -translate-y-1/2 text-foreground">$</span>
                 <input
@@ -341,9 +363,14 @@ export function PlaceBet() {
                   value={wager}
                   onChange={(e) => setWager(e.target.value)}
                   placeholder="0"
+                  min="0"
+                  max={userBalance ?? undefined}
                   className="w-full pl-8 pr-4 py-4 rounded-xl bg-input-background border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 text-lg"
                 />
               </div>
+              {wager && userBalance !== null && parseFloat(wager) > userBalance && (
+                <p className="text-destructive text-xs">Exceeds your available balance.</p>
+              )}
             </div>
 
             {/* Group Participation */}
@@ -373,7 +400,7 @@ export function PlaceBet() {
 
             <button
               onClick={handlePlaceBet}
-              disabled={!selectedOutcome || !wager || submitting}
+              disabled={!selectedOutcome || !wager || submitting || userBalance === null || parseFloat(wager) > userBalance}
               className="w-full py-4 rounded-2xl bg-primary text-primary-foreground font-semibold hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {submitting ? "Placing..." : "Place Bet"}
