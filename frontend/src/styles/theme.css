@@ -183,6 +183,16 @@
     line-height: 1.5;
   }
 
+  .glass {
+    background: rgba(255, 255, 255, 0.04);
+    backdrop-filter: blur(10px);
+  }
+
+  .glass-strong {
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(14px);
+  }
+
   .scrollbar-hide {
     -ms-overflow-style: none;
     scrollbar-width: none;
