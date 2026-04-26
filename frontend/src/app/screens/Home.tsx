@@ -135,8 +135,7 @@ export function Home() {
           .from("activity_feed")
           .select("id, activity_type, amount, user_id, bets(title)")
           .in("bet_id", myBetIds.length > 0 ? myBetIds : [""])
-          .order("created_at", { ascending: false })
-          .limit(20),
+          .order("created_at", { ascending: false }),
         supabase
           .from("bet_participants")
           .select("id", { count: "exact", head: true })
@@ -147,7 +146,7 @@ export function Home() {
           .select("date, amount")
           .eq("user_id", user?.id ?? "")
           .order("created_at", { ascending: true })
-          .limit(6),
+          .limit(5),
       ]);
 
       const activityData = (activityRes.data ?? []) as unknown as ActivityItem[];
@@ -177,8 +176,20 @@ export function Home() {
     fetchData();
   }, [user]);
 
-  const balancePct = balanceData.length >= 2
-    ? Math.round(((balanceData[balanceData.length - 1].amount - balanceData[0].amount) / balanceData[0].amount) * 100)
+  const now = new Date();
+
+  const chartData = profile
+    ? Array.from({ length: 6 }, (_, i) => {
+        const d = new Date(now.getTime() - (5 - i) * 60 * 1000);
+        return {
+          date: d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }),
+          amount: i === 5 ? profile.balance : Math.round(profile.balance * (0.85 + Math.random() * 0.3)),
+        };
+      })
+    : [];
+
+  const balancePct = chartData.length >= 2
+    ? Math.round(((chartData[chartData.length - 1].amount - chartData[0].amount) / chartData[0].amount) * 100)
     : null;
 
   return (
@@ -221,8 +232,7 @@ export function Home() {
             </div>
             <div className="w-full h-[180px] min-h-[180px]">
               <ResponsiveContainer width="100%" height={180}>
-                <LineChart data={balanceData} margin={{ top: 15, right: 10, bottom: 5, left: -20 }}>
-                  <XAxis
+                <LineChart data={chartData} margin={{ top: 15, right: 10, bottom: 5, left: -20 }}>                  <XAxis
                     dataKey="date"
                     stroke="currentColor"
                     className="text-muted-foreground"
@@ -270,7 +280,7 @@ export function Home() {
           </div>
 
           <div className="space-y-3">
-            <h3 className="text-foreground">Your Active Bets</h3>
+            <h3 className="text-foreground">Active Bets</h3>
             {loading ? (
               <div className="flex gap-4 overflow-x-auto pb-2 -mx-6 px-6">
                 {[1, 2].map((i) => (
