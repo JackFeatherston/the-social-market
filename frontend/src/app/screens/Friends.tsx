@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useLocation } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 import { Bell } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { BottomNav } from "../components/BottomNav";
@@ -33,14 +33,6 @@ function timeAgo(iso: string): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-function getOutcomeOptions(betType: string): string[] {
-  switch (betType) {
-    case "above-below": return ["Above", "Below"];
-    case "happens-or-not": return ["Yes", "No"];
-    case "how-many": return ["More", "Less"];
-    default: return ["Yes", "No"];
-  }
-}
 
 function Avatar({ id, displayName, username, size = "md" }: {
   id: string; displayName: string | null; username: string; size?: "sm" | "md" | "lg";
@@ -73,6 +65,7 @@ const RANK_LABELS = ["1", "2", "3"];
 
 export function Friends() {
   const location = useLocation();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<Tab>("friends");
   const [loading, setLoading] = useState(true);
   const [me, setMe] = useState<{ id: string; username: string; display_name: string | null; balance: number } | null>(null);
@@ -84,8 +77,12 @@ export function Friends() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [pendingAdd, setPendingAdd] = useState<Set<string>>(new Set());
   const [invites, setInvites] = useState<Invite[]>([]);
-  const [showInbox, setShowInbox] = useState(() => !!(location.state as any)?.openInbox);
+  const showInbox = !!(location.state as any)?.openInbox;
   const [outcomeSelections, setOutcomeSelections] = useState<Record<string, string>>({});
+  const [thresholdSelections, setThresholdSelections] = useState<Record<string, string>>({});
+  const [directionSelections, setDirectionSelections] = useState<Record<string, string>>({});
+  const [howManySelections, setHowManySelections] = useState<Record<string, number>>({});
+  const [wagerSelections, setWagerSelections] = useState<Record<string, string>>({});
   const [processingInvite, setProcessingInvite] = useState<string | null>(null);
   const defaultSuggestions = useRef<SuggestionRow[]>([]);
 
@@ -207,14 +204,37 @@ export function Friends() {
     }
   }
 
-  async function acceptInvite(participantId: string) {
-    const outcome = outcomeSelections[participantId];
-    if (!outcome) return;
-    setProcessingInvite(participantId);
+  function getChosenOutcome(invite: Invite): string | null {
+    const pid = invite.participant_id;
+    if (invite.bet_type === "happens-or-not") return outcomeSelections[pid] || null;
+    if (invite.bet_type === "above-below") {
+      const dir = directionSelections[pid];
+      const val = thresholdSelections[pid];
+      return dir && val ? `${dir} ${val}` : null;
+    }
+    if (invite.bet_type === "how-many") return String(howManySelections[pid] ?? 5);
+    return null;
+  }
+
+  function isPickValid(invite: Invite): boolean {
+    const pid = invite.participant_id;
+    if (invite.bet_type === "happens-or-not") return !!outcomeSelections[pid];
+    if (invite.bet_type === "above-below") return !!directionSelections[pid] && !!thresholdSelections[pid];
+    if (invite.bet_type === "how-many") return true;
+    return false;
+  }
+
+  async function acceptInvite(invite: Invite) {
+    const pid = invite.participant_id;
+    const outcome = getChosenOutcome(invite);
+    if (!isPickValid(invite)) return;
+    const customWager = parseFloat(wagerSelections[pid] ?? "");
+    const wagerAmount = !isNaN(customWager) && customWager > 0 ? customWager : invite.amount;
+    setProcessingInvite(pid);
     const { error } = await supabase.from("bet_participants")
-      .update({ status: "accepted", chosen_outcome: outcome })
-      .eq("id", participantId);
-    if (!error) setInvites((prev) => prev.filter((i) => i.participant_id !== participantId));
+      .update({ status: "accepted", chosen_outcome: outcome, amount: wagerAmount })
+      .eq("id", pid);
+    if (!error) setInvites((prev) => prev.filter((i) => i.participant_id !== pid));
     setProcessingInvite(null);
   }
 
@@ -255,7 +275,7 @@ export function Friends() {
         <div className="flex-1 overflow-y-auto scrollbar-hide px-6 pt-8 pb-6 space-y-5">
           <div className="flex items-center gap-3">
             <button
-              onClick={() => setShowInbox(false)}
+              onClick={() => navigate("/home")}
               className="w-9 h-9 rounded-full border border-border flex items-center justify-center text-foreground"
             >
               ←
@@ -271,11 +291,12 @@ export function Friends() {
           ) : (
             <div className="space-y-4">
               {invites.map((invite) => {
-                const options = getOutcomeOptions(invite.bet_type);
-                const selected = outcomeSelections[invite.participant_id];
-                const processing = processingInvite === invite.participant_id;
+                const pid = invite.participant_id;
+                const processing = processingInvite === pid;
+                const pickValid = isPickValid(invite);
+
                 return (
-                  <div key={invite.participant_id} className="bg-card border border-border rounded-2xl p-5 space-y-4">
+                  <div key={pid} className="bg-card border border-border rounded-2xl p-5 space-y-4">
                     {/* Creator */}
                     <div className="flex items-center gap-2">
                       <div className={`w-7 h-7 rounded-full ${AVATAR_COLORS[colorIndex(invite.creator_id)]} flex items-center justify-center text-white text-xs font-semibold`}>
@@ -286,36 +307,109 @@ export function Friends() {
                       </p>
                     </div>
 
-                    {/* Bet title + wager */}
-                    <div>
-                      <p className="text-foreground font-semibold">{invite.bet_title}</p>
-                      <p className="text-primary text-sm font-medium mt-0.5">${invite.amount.toFixed(0)} wager</p>
-                    </div>
+                    {/* Bet title */}
+                    <p className="text-foreground font-semibold">{invite.bet_title}</p>
 
-                    {/* Outcome picker */}
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-2">Pick your side</p>
-                      <div className="flex gap-2">
-                        {options.map((opt) => (
-                          <button
-                            key={opt}
-                            onClick={() => setOutcomeSelections((prev) => ({ ...prev, [invite.participant_id]: opt }))}
-                            className={`flex-1 py-2 rounded-xl text-sm font-medium border transition-all ${
-                              selected === opt
-                                ? "bg-primary border-primary text-primary-foreground"
-                                : "border-border text-muted-foreground hover:border-primary/50"
-                            }`}
-                          >
-                            {opt}
-                          </button>
-                        ))}
+                    {/* happens-or-not */}
+                    {invite.bet_type === "happens-or-not" && (
+                      <div className="space-y-2">
+                        <p className="text-xs text-muted-foreground">Pick your side</p>
+                        <div className="flex gap-2">
+                          {(["Yes", "No"] as const).map((opt) => (
+                            <button
+                              key={opt}
+                              onClick={() => setOutcomeSelections((prev) => ({ ...prev, [pid]: opt }))}
+                              className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-all ${
+                                outcomeSelections[pid] === opt
+                                  ? "bg-primary border-primary text-primary-foreground"
+                                  : "border-border text-muted-foreground"
+                              }`}
+                            >
+                              {opt}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* above-below */}
+                    {invite.bet_type === "above-below" && (
+                      <div className="space-y-3">
+                        <div className="space-y-1">
+                          <p className="text-xs text-muted-foreground">Threshold value</p>
+                          <input
+                            type="number"
+                            value={thresholdSelections[pid] ?? ""}
+                            onChange={(e) => setThresholdSelections((prev) => ({ ...prev, [pid]: e.target.value }))}
+                            placeholder="e.g. 100"
+                            className="w-full bg-transparent text-foreground text-xl font-bold outline-none placeholder:text-muted-foreground"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-xs text-muted-foreground">Direction</p>
+                          <div className="flex gap-2">
+                            {(["Above", "Below"] as const).map((opt) => (
+                              <button
+                                key={opt}
+                                onClick={() => setDirectionSelections((prev) => ({ ...prev, [pid]: opt }))}
+                                className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-all ${
+                                  directionSelections[pid] === opt
+                                    ? "bg-primary border-primary text-primary-foreground"
+                                    : "border-border text-muted-foreground"
+                                }`}
+                              >
+                                {opt}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        {directionSelections[pid] && thresholdSelections[pid] && (
+                          <p className="text-primary text-sm font-semibold">→ {directionSelections[pid]} {thresholdSelections[pid]}</p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* how-many */}
+                    {invite.bet_type === "how-many" && (
+                      <div className="space-y-3">
+                        <p className="text-xs text-muted-foreground">Pick your count</p>
+                        <div className="text-center">
+                          <span className="text-4xl font-bold text-foreground">{howManySelections[pid] ?? 5}</span>
+                          <span className="text-muted-foreground text-base ml-2">times</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={1}
+                          max={50}
+                          value={howManySelections[pid] ?? 5}
+                          onChange={(e) => setHowManySelections((prev) => ({ ...prev, [pid]: Number(e.target.value) }))}
+                          className="w-full accent-primary"
+                        />
+                        <div className="flex justify-between text-xs text-muted-foreground">
+                          <span>1</span><span>50</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Wager */}
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Your wager (suggested: ${invite.amount.toFixed(0)})</p>
+                      <div className="flex items-center gap-1.5 border border-border rounded-xl px-3 py-2">
+                        <span className="text-primary font-bold">$</span>
+                        <input
+                          type="number"
+                          value={wagerSelections[pid] ?? ""}
+                          onChange={(e) => setWagerSelections((prev) => ({ ...prev, [pid]: e.target.value }))}
+                          placeholder={invite.amount.toFixed(0)}
+                          className="flex-1 bg-transparent text-foreground text-sm font-semibold outline-none placeholder:text-muted-foreground"
+                        />
                       </div>
                     </div>
 
                     {/* Accept / Decline */}
                     <div className="flex gap-2">
                       <button
-                        onClick={() => declineInvite(invite.participant_id)}
+                        onClick={() => declineInvite(pid)}
                         disabled={processing}
                         className="flex-1 py-2.5 rounded-xl border border-border text-muted-foreground text-sm font-medium disabled:opacity-40"
                       >
