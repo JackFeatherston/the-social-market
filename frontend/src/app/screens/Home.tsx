@@ -5,7 +5,6 @@ import { Wallet } from "lucide-react";
 import { BottomNav } from "../components/BottomNav";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../../lib/supabase";
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
 interface Profile {
   first_name: string | null;
@@ -29,9 +28,30 @@ interface ActivityItem {
   bets: { title: string } | null;
 }
 
-interface BalancePoint {
-  date: string;
-  amount: number;
+const AVATAR_COLORS = [
+  "bg-teal-500",
+  "bg-rose-400",
+  "bg-violet-500",
+  "bg-pink-400",
+  "bg-indigo-400",
+  "bg-amber-500",
+  "bg-emerald-500",
+  "bg-sky-500",
+];
+
+function getInitials(displayName: string | null, username: string): string {
+  if (displayName) {
+    const parts = displayName.trim().split(/\s+/);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return displayName.slice(0, 2).toUpperCase();
+  }
+  return username.slice(0, 2).toUpperCase();
+}
+
+function colorIndex(id: string): number {
+  let hash = 0;
+  for (const c of id) hash = (hash * 31 + c.charCodeAt(0)) & 0xffff;
+  return hash % AVATAR_COLORS.length;
 }
 
 const AVATAR_COLORS = [
@@ -119,7 +139,7 @@ export function Home() {
 
       const myBetIds = (myBets ?? []).map((b) => b.bet_id);
 
-      const [profileRes, betsRes, activityRes, invitesRes, balanceRes] = await Promise.all([
+      const [profileRes, betsRes, activityRes, invitesRes] = await Promise.all([
         supabase
           .from("profiles")
           .select("first_name, username, balance")
@@ -128,6 +148,7 @@ export function Home() {
         supabase
           .from("bets_summary")
           .select("id, title, status, total_pot, participant_count")
+          .in("id", myBetIds.length > 0 ? myBetIds : [""])
           .in("status", ["pending", "active", "resolving"])
           .order("created_at", { ascending: false }),
         supabase
@@ -141,12 +162,6 @@ export function Home() {
           .select("id", { count: "exact", head: true })
           .eq("user_id", user?.id ?? "")
           .eq("status", "invited"),
-        supabase
-          .from("balance_history")
-          .select("date, amount")
-          .eq("user_id", user?.id ?? "")
-          .order("created_at", { ascending: true })
-          .limit(6),
       ]);
 
       const activityData = (activityRes.data ?? []) as unknown as ActivityItem[];
@@ -170,15 +185,10 @@ export function Home() {
       setUsernameMap(map);
       setDisplayNameMap(dnMap);
       setInviteCount(invitesRes.count ?? 0);
-      setBalanceData((balanceRes.data ?? []) as BalancePoint[]);
       setLoading(false);
     }
     fetchData();
   }, [user]);
-
-  const balancePct = balanceData.length >= 2
-    ? Math.round(((balanceData[balanceData.length - 1].amount - balanceData[0].amount) / balanceData[0].amount) * 100)
-    : null;
 
   return (
     <div className="relative h-full flex flex-col bg-background">

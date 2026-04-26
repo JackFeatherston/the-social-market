@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router";
 import { ArrowLeft, UserPlus, Check, Search, X, Crown } from "lucide-react";
 import { supabase } from "../../lib/supabase";
+import { haversineMeters } from "../../lib/geo";
 import { BottomNav } from "../components/BottomNav";
 
 const AVATAR_COLORS = [
@@ -42,6 +43,26 @@ type Bet = {
   total_pot: number; participant_count: number; creator_id: string;
   creator_username: string; creator_display_name: string | null; expires_at: string | null;
   winning_outcome?: string | null;
+  settlement_method: string;
+  location_mode: string | null;
+  location_result_type: string | null;
+  location_name: string | null;
+  location_lat: number | null;
+  location_lng: number | null;
+  check_in_radius_meters: number | null;
+  check_in_deadline: string | null;
+  tracking_start: string | null;
+  tracking_end: string | null;
+  location_target_user_id: string | null;
+  final_outcome: string | null;
+  settled_at: string | null;
+};
+
+type CheckIn = {
+  id: string; bet_id: string; user_id: string;
+  lat: number; lng: number; distance_meters: number | null;
+  checked_in_at: string;
+  profiles: { username: string; display_name: string | null } | null;
 };
 
 type Participant = {
@@ -90,6 +111,13 @@ export function BetDetail() {
   const [settling, setSettling] = useState(false);
   const [settlementError, setSettlementError] = useState<string | null>(null);
 
+  // Location check-in state
+  const [checkIns, setCheckIns] = useState<CheckIn[]>([]);
+  const [checkingIn, setCheckingIn] = useState(false);
+  const [checkInError, setCheckInError] = useState<string | null>(null);
+  const [finalizing, setFinalizing] = useState(false);
+  const [finalizeError, setFinalizeError] = useState<string | null>(null);
+
   // Add people state
   const [showAddPeople, setShowAddPeople] = useState(false);
   const [friendsList, setFriendsList] = useState<Friend[]>([]);
@@ -109,9 +137,14 @@ export function BetDetail() {
       { data: resolutionData },
       { data: preliminaryVoteData },
       { data: outcomeVoteData },
+      { data: checkInData },
     ] = await Promise.all([
       supabase.from("bets_summary")
-        .select("id, title, bet_type, status, total_pot, participant_count, creator_id, creator_username, creator_display_name, expires_at, winning_outcome")
+        .select(`id, title, bet_type, status, total_pot, participant_count,
+          creator_id, creator_username, creator_display_name, expires_at, winning_outcome,
+          settlement_method, location_mode, location_result_type, location_name,
+          location_lat, location_lng, check_in_radius_meters, check_in_deadline,
+          tracking_start, tracking_end, location_target_user_id, final_outcome, settled_at`)
         .eq("id", id).single(),
       supabase.from("bet_participants")
         .select("id, user_id, chosen_outcome, amount, status, profiles(username, display_name)")
@@ -127,15 +160,19 @@ export function BetDetail() {
       supabase.from("bet_outcome_votes")
         .select("id, bet_id, voter_id, outcome")
         .eq("bet_id", id),
+      supabase.from("bet_location_checkins")
+        .select("id, bet_id, user_id, lat, lng, distance_meters, checked_in_at, profiles(username, display_name)")
+        .eq("bet_id", id).order("checked_in_at", { ascending: true }),
     ]);
 
     if (betError) { setError(betError.message); setLoading(false); return; }
-    setBet(betData ?? null);
+    setBet(betData as unknown as Bet ?? null);
     setParticipants((acceptedData ?? []) as unknown as Participant[]);
     setAllParticipantIds((allParticipantsData ?? []).map((p: any) => p.user_id));
     setResolution((resolutionData ?? null) as Resolution | null);
     setPreliminaryVotes((preliminaryVoteData ?? []) as PreliminaryVote[]);
     setOutcomeVotes((outcomeVoteData ?? []) as OutcomeVote[]);
+    setCheckIns((checkInData ?? []) as unknown as CheckIn[]);
     setLoading(false);
   }
 
@@ -346,6 +383,150 @@ export function BetDetail() {
 
     await refreshResolution();
     setSettling(false);
+  }
+
+  async function handleCheckIn() {
+    if (!bet || !currentUserId) return;
+    setCheckingIn(true);
+    setCheckInError(null);
+
+    if (!navigator.geolocation) {
+      setCheckInError("Geolocation is not supported by this browser.");
+      setCheckingIn(false);
+      return;
+    }
+
+    const now = new Date();
+    if (bet.location_mode === 'count') {
+      if (bet.tracking_start && now < new Date(bet.tracking_start)) {
+        setCheckInError("Tracking window has not started yet.");
+        setCheckingIn(false);
+        return;
+      }
+      if (bet.tracking_end && now > new Date(bet.tracking_end)) {
+        setCheckInError("Tracking window has ended.");
+        setCheckingIn(false);
+        return;
+      }
+    }
+
+    const myCheckIns = checkIns.filter((c) => c.user_id === currentUserId);
+    if (bet.location_mode !== 'count' && myCheckIns.length > 0) {
+      setCheckInError("You have already checked in for this bet.");
+      setCheckingIn(false);
+      return;
+    }
+    if (bet.location_mode === 'count' && myCheckIns.length > 0) {
+      const lastCheckIn = new Date(myCheckIns[myCheckIns.length - 1].checked_in_at);
+      if (lastCheckIn > new Date(now.getTime() - 60 * 60 * 1000)) {
+        setCheckInError("You can only check in once per hour for count bets.");
+        setCheckingIn(false);
+        return;
+      }
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        const distance = haversineMeters(latitude, longitude, bet.location_lat!, bet.location_lng!);
+        const radius = bet.check_in_radius_meters ?? 100;
+
+        if (distance > radius) {
+          setCheckInError(`You are ${Math.round(distance)}m away. Must be within ${radius}m.`);
+          setCheckingIn(false);
+          return;
+        }
+
+        const { error } = await supabase.from("bet_location_checkins").insert({
+          bet_id: bet.id,
+          user_id: currentUserId,
+          lat: latitude,
+          lng: longitude,
+          distance_meters: distance,
+        });
+
+        if (error) {
+          setCheckInError(error.message);
+        } else {
+          await fetchData();
+        }
+        setCheckingIn(false);
+      },
+      (err) => {
+        setCheckInError(`Location error: ${err.message}`);
+        setCheckingIn(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  }
+
+  async function handleFinalizeLocation() {
+    if (!bet || !currentUserId) return;
+    setFinalizing(true);
+    setFinalizeError(null);
+
+    const mode     = bet.location_mode;
+    const result   = bet.location_result_type;
+    const target   = bet.location_target_user_id;
+    const deadline = bet.check_in_deadline ? new Date(bet.check_in_deadline) : null;
+    const winStart = bet.tracking_start ? new Date(bet.tracking_start) : null;
+    const winEnd   = bet.tracking_end   ? new Date(bet.tracking_end)   : null;
+
+    let finalOutcome: string | null = null;
+
+    if (mode === 'arrival') {
+      const name = (c: CheckIn) => c.profiles?.display_name ?? c.profiles?.username ?? c.user_id;
+      if (result === 'first_to_arrive') {
+        finalOutcome = checkIns[0] ? name(checkIns[0]) : 'No one checked in';
+      } else if (result === 'last_to_arrive') {
+        finalOutcome = checkIns.length > 0 ? name(checkIns[checkIns.length - 1]) : 'No one checked in';
+      } else if (result === 'late_by_deadline') {
+        if (!deadline) { setFinalizeError("No deadline set."); setFinalizing(false); return; }
+        const onTime = new Set(checkIns.filter((c) => new Date(c.checked_in_at) <= deadline).map((c) => c.user_id));
+        const late = participants.filter((p) => !onTime.has(p.user_id));
+        finalOutcome = late.length === 0
+          ? 'Everyone arrived on time'
+          : `Late: ${late.map((p) => p.profiles?.display_name ?? p.profiles?.username ?? p.user_id).join(', ')}`;
+      }
+    } else if (mode === 'presence') {
+      if (!target) { setFinalizeError("No target user set."); setFinalizing(false); return; }
+      const targetCheckIns = checkIns.filter((c) => c.user_id === target);
+      if (result === 'target_checked_in') {
+        finalOutcome = targetCheckIns.length > 0 ? 'Yes — target checked in' : 'No — target did not check in';
+      } else {
+        const beforeDeadline = deadline ? targetCheckIns.some((c) => new Date(c.checked_in_at) <= deadline) : false;
+        finalOutcome = beforeDeadline ? 'Yes — checked in before deadline' : 'No — missed deadline';
+      }
+    } else if (mode === 'count') {
+      if (!target) { setFinalizeError("No target user set."); setFinalizing(false); return; }
+      const inWindow = checkIns.filter((c) => {
+        if (c.user_id !== target) return false;
+        const t = new Date(c.checked_in_at);
+        if (winStart && t < winStart) return false;
+        if (winEnd   && t > winEnd)   return false;
+        return true;
+      });
+      finalOutcome = `${inWindow.length} visit(s) in tracking window`;
+    }
+
+    if (!finalOutcome) {
+      setFinalizeError("Could not compute a result. Check mode and result type settings.");
+      setFinalizing(false);
+      return;
+    }
+
+    const { error } = await supabase.from("bets").update({
+      status: "settled",
+      final_outcome: finalOutcome,
+      settled_at: new Date().toISOString(),
+    }).eq("id", bet.id);
+
+    if (error) {
+      setFinalizeError(error.message);
+    } else {
+      await fetchData();
+    }
+    setFinalizing(false);
   }
 
   if (loading) {
@@ -563,8 +744,102 @@ export function BetDetail() {
           )}
         </div>
 
-        {/* Settle button — creator only */}
-        {(resolution || bet.status === "resolving" || bet.status === "settled") && (
+        {/* Location settlement section */}
+        {bet.settlement_method === 'location' && (
+          <div className="space-y-3">
+            <p className="text-xs font-semibold text-muted-foreground tracking-widest">LOCATION SETTLEMENT</p>
+            <div className="bg-card rounded-3xl p-5 border border-border space-y-4">
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Place</span>
+                  <span className="text-foreground font-medium">{bet.location_name}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Mode</span>
+                  <span className="text-foreground font-medium capitalize">{bet.location_mode}</span>
+                </div>
+                {bet.location_result_type && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Result type</span>
+                    <span className="text-foreground font-medium">{bet.location_result_type.replace(/_/g, ' ')}</span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Radius</span>
+                  <span className="text-foreground font-medium">{bet.check_in_radius_meters ?? 100}m</span>
+                </div>
+                {bet.check_in_deadline && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Deadline</span>
+                    <span className="text-foreground font-medium">{new Date(bet.check_in_deadline).toLocaleString()}</span>
+                  </div>
+                )}
+                {bet.tracking_start && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Tracking window</span>
+                    <span className="text-foreground font-medium text-right">
+                      {new Date(bet.tracking_start).toLocaleString()} – {bet.tracking_end ? new Date(bet.tracking_end).toLocaleString() : '?'}
+                    </span>
+                  </div>
+                )}
+                {bet.final_outcome && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Result</span>
+                    <span className="text-emerald-400 font-semibold">{bet.final_outcome}</span>
+                  </div>
+                )}
+              </div>
+
+              {bet.status !== 'settled' && acceptedParticipantIds.includes(currentUserId ?? '') && (
+                <div className="space-y-2">
+                  <button
+                    onClick={handleCheckIn}
+                    disabled={checkingIn}
+                    className="w-full py-3 rounded-2xl bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-40"
+                  >
+                    {checkingIn ? "Getting location..." : "Check In Here"}
+                  </button>
+                  {checkInError && <p className="text-destructive text-xs">{checkInError}</p>}
+                </div>
+              )}
+
+              {checkIns.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">Check-ins</p>
+                  {checkIns.map((c) => (
+                    <div key={c.id} className="flex items-center justify-between text-sm">
+                      <div>
+                        <p className="text-foreground font-medium">
+                          {c.profiles?.display_name ?? c.profiles?.username ?? 'Unknown'}
+                        </p>
+                        <p className="text-muted-foreground text-xs">
+                          {new Date(c.checked_in_at).toLocaleString()}
+                          {c.distance_meters != null && ` · ${Math.round(c.distance_meters)}m away`}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {isCreator && bet.status !== 'settled' && (
+                <div className="space-y-2">
+                  <button
+                    onClick={handleFinalizeLocation}
+                    disabled={finalizing}
+                    className="w-full py-3 rounded-2xl border border-primary text-primary text-sm font-semibold disabled:opacity-40"
+                  >
+                    {finalizing ? "Computing result..." : "Finalize Location Result"}
+                  </button>
+                  {finalizeError && <p className="text-destructive text-xs">{finalizeError}</p>}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Voting settlement section */}
+        {bet.settlement_method !== 'location' && (resolution || bet.status === "resolving" || bet.status === "settled") && (
           <div className="space-y-3">
             <p className="text-xs font-semibold text-muted-foreground tracking-widest">SETTLEMENT VOTE</p>
             <div className="bg-card rounded-3xl p-5 border border-border space-y-4">
@@ -663,7 +938,7 @@ export function BetDetail() {
           </div>
         )}
 
-        {isCreator && bet.status !== "settled" && bet.status !== "cancelled" && (
+        {bet.settlement_method !== 'location' && isCreator && bet.status !== "settled" && bet.status !== "cancelled" && (
           <button
             onClick={startSettlement}
             disabled={settling || bet.status === "resolving" || participants.length === 0}
